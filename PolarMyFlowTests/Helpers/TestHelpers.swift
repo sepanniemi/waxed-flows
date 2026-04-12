@@ -30,3 +30,11 @@ func makeActivity(
         avgPace: avgPace
     )
 }
+
+class InMemoryTokenStore: TokenStore {
+    private var stored: AuthToken?
+
+    func save(_ token: AuthToken) throws { stored = token }
+    func load() throws -> AuthToken? { stored }
+    func delete() throws { stored = nil }
+}
