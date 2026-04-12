@@ -40,5 +40,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.personal.polarmyflowTests
+        GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: PolarMyFlow
