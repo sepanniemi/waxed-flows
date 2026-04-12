@@ -1,0 +1,43 @@
+name: PolarMyFlow
+options:
+  bundleIdPrefix: com.personal
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "15.0"
+  swift: "5.9"
+
+targets:
+  PolarMyFlow:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - PolarMyFlow
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.personal.polarmyflow
+        SWIFT_VERSION: 5.9
+        DEVELOPMENT_TEAM: ""
+    info:
+      path: PolarMyFlow/Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - polarflow
+            CFBundleURLName: com.personal.polarmyflow
+        UILaunchStoryboardName: ""
+    dependencies:
+      - sdk: SwiftData.framework
+      - sdk: AuthenticationServices.framework
+
+  PolarMyFlowTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - PolarMyFlowTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.personal.polarmyflowTests
+    dependencies:
+      - target: PolarMyFlow
