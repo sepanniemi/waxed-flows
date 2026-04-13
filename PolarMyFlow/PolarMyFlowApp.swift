@@ -23,15 +23,18 @@ struct PolarMyFlowApp: App {
                 .environment(authManager)
                 .modelContainer(sharedModelContainer)
                 .task {
-                    // Restore session on every launch
                     authManager.restoreSession()
                     await startSyncIfAuthenticated()
                 }
                 .onChange(of: authManager.isAuthenticated) { _, isAuthenticated in
-                    // Also trigger sync when user logs in for the first time
                     guard isAuthenticated else { return }
                     Task { await startSyncIfAuthenticated() }
                 }
+                #if DEBUG
+                .onReceive(NotificationCenter.default.publisher(for: .debugResetSync)) { _ in
+                    Task { await startSyncIfAuthenticated() }
+                }
+                #endif
         }
     }
 
