@@ -105,10 +105,22 @@ final class AuthManager: NSObject {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         let credentials = Data("\(Self.clientID):\(Self.clientSecret)".utf8).base64EncodedString()
         request.setValue("Basic \(credentials)", forHTTPHeaderField: "Authorization")
-        request.httpBody = "grant_type=authorization_code&code=\(code)&redirect_uri=\(Self.redirectURI)"
-            .data(using: .utf8)
 
-        let (data, _) = try await session.data(for: request)
+        var bodyComponents = URLComponents()
+        bodyComponents.queryItems = [
+            URLQueryItem(name: "grant_type", value: "authorization_code"),
+            URLQueryItem(name: "code", value: code),
+            URLQueryItem(name: "redirect_uri", value: Self.redirectURI)
+        ]
+        request.httpBody = bodyComponents.query?.data(using: .utf8)
+
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            let body = String(data: data, encoding: .utf8) ?? "(empty)"
+            throw AuthError.tokenExchangeFailed(NSError(domain: "PolarAuth",
+                code: http.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode): \(body)"]))
+        }
         return try decodeTokenResponse(data)
     }
 

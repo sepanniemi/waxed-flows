@@ -68,7 +68,7 @@ struct LoginView: View {
                     isAuthenticating = true
                     errorMessage = nil
                     do { try await authManager.authenticate() }
-                    catch { errorMessage = "Authentication failed. Please try again." }
+                    catch { errorMessage = error.localizedDescription }
                     isAuthenticating = false
                 }
             } label: {
