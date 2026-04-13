@@ -96,6 +96,12 @@ final class PolarFlowWebClient {
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw APIError.networkUnavailable }
+        #if DEBUG
+        print("🌐 Flow history \(from)→\(to): HTTP \(http.statusCode), cookie=\(cookieHeader?.prefix(40) ?? "nil")")
+        if http.statusCode != 200 {
+            print("🌐 Response body: \(String(data: data, encoding: .utf8) ?? "(binary)")")
+        }
+        #endif
         guard http.statusCode == 200 else { throw APIError.httpError(statusCode: http.statusCode) }
 
         let sessions = try parseSessions(from: data)

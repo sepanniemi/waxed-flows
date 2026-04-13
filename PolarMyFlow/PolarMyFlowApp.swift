@@ -41,6 +41,10 @@ struct PolarMyFlowApp: App {
     @MainActor
     private func startSyncIfAuthenticated() async {
         guard authManager.isAuthenticated, let token = authManager.currentToken else { return }
+        #if DEBUG
+        print("🔑 ACCESS TOKEN: \(token.accessToken)")
+        print("🔑 REFRESH TOKEN: \(token.refreshToken)")
+        #endif
 
         // On first login userID is unknown — register with AccessLink to get it
         let userID: String
