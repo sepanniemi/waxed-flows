@@ -5,6 +5,7 @@
 enum PolarFlowWebConstants {
     static let baseURL = "https://flow.polar.com"
     static let historyPath = "/api/training/history"
+    static let summaryPath = "/api/training/analysis/%@/summary" // %@ = activity ID
 
     // Auth: cookie-based. Session cookies from the shared iOS web session
     // (WKWebsiteDataStore.default()) contain FLOW_SESSION and PLAY_SESSION_FLOW.

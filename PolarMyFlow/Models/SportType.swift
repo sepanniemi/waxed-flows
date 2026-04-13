@@ -16,15 +16,16 @@ enum SportType: String, Codable, CaseIterable, Equatable {
 
     static func from(polarSportId id: Int) -> SportType {
         switch id {
-        case 1:      return .running
-        case 2:      return .cycling
-        case 3:      return .walking
-        case 4:      return .swimming
-        case 5:      return .mountainBiking
-        case 6, 62:  return .xcSkiing
-        case 15:     return .strength
-        case 17:     return .rowing
-        default:     return .other
+        case 1, 4:           return .running         // RUNNING, JOGGING
+        case 2:              return .cycling
+        case 3:              return .walking
+        case 5:              return .mountainBiking
+        case 6, 24, 25, 62:  return .xcSkiing        // CROSS-COUNTRY_SKIING, XC_SKIING_FREESTYLE, XC_SKIING_CLASSIC
+        case 8:              return .rowing
+        case 11:             return .hiking
+        case 15:             return .strength
+        case 23:             return .swimming
+        default:             return .other
         }
     }
 

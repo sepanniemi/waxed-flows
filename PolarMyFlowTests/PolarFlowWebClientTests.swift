@@ -128,14 +128,18 @@ final class PolarFlowWebClientTests: XCTestCase {
 
     func test_sportIdMapping() {
         XCTAssertEqual(SportType.from(polarSportId: 1), .running)
+        XCTAssertEqual(SportType.from(polarSportId: 4), .running)   // JOGGING → running
         XCTAssertEqual(SportType.from(polarSportId: 2), .cycling)
         XCTAssertEqual(SportType.from(polarSportId: 3), .walking)
-        XCTAssertEqual(SportType.from(polarSportId: 4), .swimming)
         XCTAssertEqual(SportType.from(polarSportId: 5), .mountainBiking)
         XCTAssertEqual(SportType.from(polarSportId: 6), .xcSkiing)
+        XCTAssertEqual(SportType.from(polarSportId: 24), .xcSkiing)  // XC_SKIING_FREESTYLE
+        XCTAssertEqual(SportType.from(polarSportId: 25), .xcSkiing)  // XC_SKIING_CLASSIC
         XCTAssertEqual(SportType.from(polarSportId: 62), .xcSkiing)
+        XCTAssertEqual(SportType.from(polarSportId: 8), .rowing)
+        XCTAssertEqual(SportType.from(polarSportId: 11), .hiking)
         XCTAssertEqual(SportType.from(polarSportId: 15), .strength)
-        XCTAssertEqual(SportType.from(polarSportId: 17), .rowing)
+        XCTAssertEqual(SportType.from(polarSportId: 23), .swimming)
         XCTAssertEqual(SportType.from(polarSportId: 999), .other)
     }
 
