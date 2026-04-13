@@ -23,14 +23,42 @@ struct PolarMyFlowApp: App {
                 .environment(authManager)
                 .modelContainer(sharedModelContainer)
                 .task {
+                    // Restore session on every launch
                     authManager.restoreSession()
-                    guard authManager.isAuthenticated,
-                          let token = authManager.currentToken,
-                          let userID = authManager.currentUserID
-                    else { return }
-                    await runSync(token: token, userID: userID)
+                    await startSyncIfAuthenticated()
+                }
+                .onChange(of: authManager.isAuthenticated) { _, isAuthenticated in
+                    // Also trigger sync when user logs in for the first time
+                    guard isAuthenticated else { return }
+                    Task { await startSyncIfAuthenticated() }
                 }
         }
+    }
+
+    @MainActor
+    private func startSyncIfAuthenticated() async {
+        guard authManager.isAuthenticated, let token = authManager.currentToken else { return }
+
+        // On first login userID is unknown — register with AccessLink to get it
+        let userID: String
+        if let knownID = authManager.currentUserID {
+            userID = knownID
+        } else {
+            isSyncing = true
+            syncMessage = "Connecting to Polar..."
+            do {
+                let accessLinkClient = PolarAccessLinkClient(accessToken: token.accessToken)
+                let fetchedID = try await accessLinkClient.registerUser()
+                authManager.setUserID(fetchedID)
+                userID = fetchedID
+            } catch {
+                syncMessage = "Could not connect: \(error.localizedDescription)"
+                isSyncing = false
+                return
+            }
+        }
+
+        await runSync(token: token, userID: userID)
     }
 
     @MainActor
@@ -42,7 +70,8 @@ struct PolarMyFlowApp: App {
         let context = ModelContext(container)
         let repo = ActivityRepository(context: context)
         let accessLinkClient = PolarAccessLinkClient(accessToken: token.accessToken)
-        let flowWebClient = PolarFlowWebClient(userID: userID)
+        let cookieHeader = await PolarFlowWebClient.extractCookieHeader()
+        let flowWebClient = PolarFlowWebClient(userID: userID, cookieHeader: cookieHeader)
         let coordinator = SyncCoordinator(
             repository: repo,
             accessLinkClient: accessLinkClient,
@@ -61,7 +90,7 @@ struct PolarMyFlowApp: App {
                 syncMessage = nil
             }
         } catch {
-            syncMessage = nil
+            syncMessage = "Sync failed: \(error.localizedDescription)"
         }
 
         isSyncing = false
