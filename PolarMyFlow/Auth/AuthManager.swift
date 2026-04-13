@@ -140,11 +140,23 @@ final class AuthManager: NSObject {
     private func decodeTokenResponse(_ data: Data) throws -> AuthToken {
         struct Response: Decodable {
             let access_token: String
-            let refresh_token: String
-            let expires_in: Int
+            let refresh_token: String?  // Polar may omit this on first exchange
+            let expires_in: Int?
         }
-        let r = try JSONDecoder().decode(Response.self, from: data)
-        return AuthToken(accessToken: r.access_token, refreshToken: r.refresh_token, expiresIn: r.expires_in)
+        do {
+            let r = try JSONDecoder().decode(Response.self, from: data)
+            return AuthToken(
+                accessToken: r.access_token,
+                refreshToken: r.refresh_token ?? "",
+                expiresIn: r.expires_in ?? 21600
+            )
+        } catch {
+            let raw = String(data: data, encoding: .utf8) ?? "(binary)"
+            throw AuthError.tokenExchangeFailed(NSError(
+                domain: "PolarAuth", code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Decode failed. Response: \(raw)"]
+            ))
+        }
     }
 }
 
