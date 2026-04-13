@@ -19,9 +19,9 @@ final class AuthManager: NSObject {
     private let tokenStore: TokenStore
     private let session: URLSession
 
-    // Polar API constants
-    static let clientID     = "c045142a-470a-4d0c-8f44-b8aa1200e975"
-    static let clientSecret = "59ccbd6e-aaae-4881-b121-a3b7774ff03b"
+    // Polar API constants — debug uses test client, release uses production client
+    static let clientID     = BuildConfig.clientID
+    static let clientSecret = BuildConfig.clientSecret
     static let redirectURI  = "polarflow://auth"
     static let authURLBase  = "https://flow.polar.com/oauth2/authorization"
     static let tokenURL     = "https://polarremote.com/v2/oauth2/token"

@@ -44,20 +44,29 @@ final class PolarFlowWebClient {
         return polarCookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
     }
 
-    // Fetch all historical activities by requesting 1-year chunks.
-    // Also fetches the summary endpoint per activity to enrich maxHR, ascent, descent.
+    // Fetch activities in 1-year chunks.
+    // Debug: last 90 days only. Release: full history from 2010.
     func fetchAllActivities() async throws -> [Activity] {
         var all: [Activity] = []
         let cal = Calendar(identifier: .gregorian)
-        let currentYear = cal.component(.year, from: Date())
-        let startYear = PolarFlowWebConstants.historyStartYear
+        let now = Date()
+        let currentYear = cal.component(.year, from: now)
+
+        let windowStart: Date
+        if let lookbackDays = BuildConfig.historyLookbackDays {
+            windowStart = cal.date(byAdding: .day, value: -lookbackDays, to: now)!
+        } else {
+            var comps = DateComponents()
+            comps.year = PolarFlowWebConstants.historyStartYear; comps.month = 1; comps.day = 1
+            windowStart = cal.date(from: comps)!
+        }
+
+        let startYear = cal.component(.year, from: windowStart)
 
         for year in startYear...currentYear {
-            let fromDate = String(format: "%04d-01-01", year)
-            let toDate   = year < currentYear
-                ? String(format: "%04d-12-31", year)
-                : dateString(Date())
-            let batch = try await fetchChunk(from: fromDate, to: toDate)
+            let fromStr = year == startYear ? dateString(windowStart) : String(format: "%04d-01-01", year)
+            let toStr   = year < currentYear ? String(format: "%04d-12-31", year) : dateString(now)
+            let batch = try await fetchChunk(from: fromStr, to: toStr)
             all.append(contentsOf: batch)
         }
         return all
