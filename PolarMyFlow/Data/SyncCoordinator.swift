@@ -8,59 +8,31 @@ struct SyncProgress {
 final class SyncCoordinator {
     private let repository: ActivityRepository
     private let accessLinkClient: AccessLinkClientProtocol
-    private let flowWebClient: FlowWebClientProtocol
 
-    init(
-        repository: ActivityRepository,
-        accessLinkClient: AccessLinkClientProtocol,
-        flowWebClient: FlowWebClientProtocol
-    ) {
+    init(repository: ActivityRepository, accessLinkClient: AccessLinkClientProtocol) {
         self.repository = repository
         self.accessLinkClient = accessLinkClient
-        self.flowWebClient = flowWebClient
     }
 
-    // Main entry point. Call on every app launch with the authenticated user's ID.
+    // Pull any new activities from AccessLink and save them.
+    // On first call after registration this returns all historical activities.
+    // On subsequent calls it returns only activities added since the last commit.
     @discardableResult
     func sync(userID: String) async throws -> SyncProgress {
-        let state = try repository.syncState(forUserID: userID)
         var imported = 0
         var errors: [Error] = []
 
-        if !state.historicalImportComplete {
-            // First launch: import history then register with AccessLink
-            do {
-                let historical = try await flowWebClient.fetchAllActivities()
-                for activity in historical {
-                    try repository.save(activity)
-                    imported += 1
-                }
-                state.historicalImportComplete = true
-            } catch {
-                errors.append(error)
+        do {
+            let activities = try await accessLinkClient.pullNewActivities()
+            for activity in activities {
+                try repository.save(activity)
+                imported += 1
             }
-
-            if !state.accessLinkRegistered {
-                do {
-                    _ = try await accessLinkClient.registerUser()
-                    state.accessLinkRegistered = true
-                } catch {
-                    errors.append(error)
-                }
-            }
-        } else {
-            // Subsequent launches: AccessLink only
-            do {
-                let newActivities = try await accessLinkClient.pullNewActivities()
-                for activity in newActivities {
-                    try repository.save(activity)
-                    imported += 1
-                }
-            } catch {
-                errors.append(error)
-            }
+        } catch {
+            errors.append(error)
         }
 
+        let state = try repository.syncState(forUserID: userID)
         state.lastSyncedAt = Date()
         try repository.saveSyncState()
 

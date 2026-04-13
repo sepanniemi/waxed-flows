@@ -73,23 +73,12 @@ struct PolarMyFlowApp: App {
         isSyncing = true
         syncMessage = "Syncing with Polar..."
 
-        let container = sharedModelContainer
-        let context = ModelContext(container)
+        let context = ModelContext(sharedModelContainer)
         let repo = ActivityRepository(context: context)
         let accessLinkClient = PolarAccessLinkClient(accessToken: token.accessToken)
-        let cookieHeader = await PolarFlowWebClient.extractCookieHeader()
-        let flowWebClient = PolarFlowWebClient(userID: userID, cookieHeader: cookieHeader)
-        let coordinator = SyncCoordinator(
-            repository: repo,
-            accessLinkClient: accessLinkClient,
-            flowWebClient: flowWebClient
-        )
+        let coordinator = SyncCoordinator(repository: repo, accessLinkClient: accessLinkClient)
 
         do {
-            let state = try repo.syncState(forUserID: userID)
-            if !state.historicalImportComplete {
-                syncMessage = "Importing your training history..."
-            }
             let progress = try await coordinator.sync(userID: userID)
             if progress.imported > 0 {
                 syncMessage = "Imported \(progress.imported) new activities"

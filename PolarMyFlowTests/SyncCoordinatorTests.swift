@@ -7,73 +7,56 @@ final class SyncCoordinatorTests: XCTestCase {
     var repo: ActivityRepository!
     var coordinator: SyncCoordinator!
     var mockAccessLink: MockAccessLinkClient!
-    var mockFlowWeb: MockFlowWebClient!
 
     override func setUpWithError() throws {
         context = try makeTestContext()
         repo = ActivityRepository(context: context)
         mockAccessLink = MockAccessLinkClient()
-        mockFlowWeb = MockFlowWebClient()
-        coordinator = SyncCoordinator(
-            repository: repo,
-            accessLinkClient: mockAccessLink,
-            flowWebClient: mockFlowWeb
-        )
+        coordinator = SyncCoordinator(repository: repo, accessLinkClient: mockAccessLink)
     }
 
-    func test_firstLaunch_runsHistoricalImportThenRegistersAccessLink() async throws {
-        mockFlowWeb.stubbedActivities = [makeActivity(id: "hist-1")]
-        mockAccessLink.stubbedUserID = "user-42"
+    func test_sync_savesReturnedActivities() async throws {
+        mockAccessLink.stubbedActivities = [makeActivity(id: "a1"), makeActivity(id: "a2")]
+
+        let progress = try await coordinator.sync(userID: "user-1")
+
+        XCTAssertEqual(progress.imported, 2)
+        let all = try repo.fetchAll()
+        XCTAssertEqual(all.count, 2)
+    }
+
+    func test_sync_emptyResponse_importsZero() async throws {
         mockAccessLink.stubbedActivities = []
 
-        let progress = try await coordinator.sync(userID: "user-42")
+        let progress = try await coordinator.sync(userID: "user-1")
 
-        XCTAssertTrue(mockFlowWeb.fetchAllCalled)
-        XCTAssertTrue(mockAccessLink.registerCalled)
-        XCTAssertEqual(progress.imported, 1)
-
-        let state = try repo.syncState(forUserID: "user-42")
-        XCTAssertTrue(state.historicalImportComplete)
-        XCTAssertTrue(state.accessLinkRegistered)
+        XCTAssertEqual(progress.imported, 0)
+        XCTAssertTrue(progress.errors.isEmpty)
     }
 
-    func test_subsequentLaunch_onlyCallsAccessLink() async throws {
-        // Pre-seed state as already completed first launch
-        let state = try repo.syncState(forUserID: "user-42")
-        state.historicalImportComplete = true
-        state.accessLinkRegistered = true
-        try context.save()
+    func test_sync_deduplication_doesNotDoubleCount() async throws {
+        try repo.save(makeActivity(id: "existing"))
+        mockAccessLink.stubbedActivities = [makeActivity(id: "existing"), makeActivity(id: "new")]
 
-        mockAccessLink.stubbedActivities = [makeActivity(id: "new-1")]
-
-        _ = try await coordinator.sync(userID: "user-42")
-
-        XCTAssertFalse(mockFlowWeb.fetchAllCalled)
-        XCTAssertFalse(mockAccessLink.registerCalled)
+        _ = try await coordinator.sync(userID: "user-1")
 
         let all = try repo.fetchAll()
-        XCTAssertEqual(all.count, 1)
-        XCTAssertEqual(all.first?.id, "new-1")
+        XCTAssertEqual(all.count, 2)
     }
 
-    func test_deduplication_doesNotDoubleCount() async throws {
-        try repo.save(makeActivity(id: "shared-1"))
+    func test_sync_updatesLastSyncedAt() async throws {
+        mockAccessLink.stubbedActivities = []
+        let before = Date()
 
-        let state = try repo.syncState(forUserID: "user-42")
-        state.historicalImportComplete = true
-        state.accessLinkRegistered = true
-        try context.save()
+        _ = try await coordinator.sync(userID: "user-1")
 
-        mockAccessLink.stubbedActivities = [makeActivity(id: "shared-1"), makeActivity(id: "new-2")]
-
-        _ = try await coordinator.sync(userID: "user-42")
-
-        let all = try repo.fetchAll()
-        XCTAssertEqual(all.count, 2)  // shared-1 + new-2, no duplicate
+        let state = try repo.syncState(forUserID: "user-1")
+        XCTAssertNotNil(state.lastSyncedAt)
+        XCTAssertGreaterThanOrEqual(state.lastSyncedAt!, before)
     }
 }
 
-// MARK: - Mock clients
+// MARK: - Mock
 
 class MockAccessLinkClient: AccessLinkClientProtocol {
     var registerCalled = false
@@ -85,14 +68,4 @@ class MockAccessLinkClient: AccessLinkClientProtocol {
         return stubbedUserID
     }
     func pullNewActivities() async throws -> [Activity] { stubbedActivities }
-}
-
-class MockFlowWebClient: FlowWebClientProtocol {
-    var fetchAllCalled = false
-    var stubbedActivities: [Activity] = []
-
-    func fetchAllActivities() async throws -> [Activity] {
-        fetchAllCalled = true
-        return stubbedActivities
-    }
 }
