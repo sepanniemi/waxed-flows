@@ -18,7 +18,7 @@ final class PolarAccessLinkClient {
         request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["member-id": ""])
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["member-id": "polarmyflow-user"])
 
         let (data, response) = try await session.data(for: request)
         let http = response as! HTTPURLResponse
