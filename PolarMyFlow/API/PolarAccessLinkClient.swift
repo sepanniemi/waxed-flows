@@ -11,21 +11,34 @@ final class PolarAccessLinkClient {
     }
 
     // Register user with AccessLink. Returns polar-user-id as String.
-    // 409 = already registered — fetch user info and return ID.
+    // 409 = already registered — not an error, just means we're good.
     func registerUser() async throws -> String {
         let url = URL(string: "\(Self.baseURL)/v3/users")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["member-id": "polarmyflow-user"])
+        request.setValue("application/xml", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8" ?>
+        <register>
+          <member-id>polarmyflow-user</member-id>
+        </register>
+        """
+        request.httpBody = xml.data(using: .utf8)
 
         let (data, response) = try await session.data(for: request)
         let http = response as! HTTPURLResponse
 
+        #if DEBUG
+        print("📡 Register user: HTTP \(http.statusCode)")
+        if let body = String(data: data, encoding: .utf8) { print("📡 Response: \(body)") }
+        #endif
+
         if http.statusCode == 409 {
-            // Already registered — fetch existing user
-            return try await fetchCurrentUserID()
+            // Already registered — that's fine
+            return "registered"
         }
         guard http.statusCode == 200 || http.statusCode == 201 else {
             throw APIError.httpError(statusCode: http.statusCode)
@@ -33,85 +46,33 @@ final class PolarAccessLinkClient {
         return try parseUserID(from: data)
     }
 
-    // Fetch all new activities via the transaction model.
-    // Returns empty array if 204 (no new activities).
-    // Commits transaction after successful fetch.
+    // Fetch exercises from AccessLink (last 30 days of data uploaded to Flow).
+    // Simple GET — no transaction model needed.
     func pullNewActivities() async throws -> [Activity] {
-        // 1. Create transaction
-        let transactionURL = URL(string: "\(Self.baseURL)/v3/exercises/transaction")!
-        var txRequest = URLRequest(url: transactionURL)
-        txRequest.httpMethod = "POST"
-        txRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        txRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let (txData, txResponse) = try await session.data(for: txRequest)
-        let txHTTP = txResponse as! HTTPURLResponse
-
-        if txHTTP.statusCode == 204 { return [] }
-        guard txHTTP.statusCode == 201 else {
-            throw APIError.httpError(statusCode: txHTTP.statusCode)
-        }
-
-        struct TransactionResponse: Decodable {
-            let transactionID: Int
-            enum CodingKeys: String, CodingKey { case transactionID = "transaction-id" }
-        }
-        guard let tx = try? JSONDecoder().decode(TransactionResponse.self, from: txData) else {
-            throw APIError.decodingFailed
-        }
-        let transactionID = tx.transactionID
-
-        // 2. Fetch exercise list
-        let listURL = URL(string: "\(Self.baseURL)/v3/exercises/\(transactionID)")!
-        var listRequest = URLRequest(url: listURL)
-        listRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        listRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let (listData, _) = try await session.data(for: listRequest)
-
-        struct ExerciseRef: Decodable {
-            let id: Int
-        }
-        struct ListResponse: Decodable {
-            let exercises: [ExerciseRef]
-            enum CodingKeys: String, CodingKey { case exercises }
-        }
-        guard let list = try? JSONDecoder().decode(ListResponse.self, from: listData) else {
-            throw APIError.decodingFailed
-        }
-
-        // 3. Fetch detail for each exercise
-        var activities: [Activity] = []
-        for ref in list.exercises {
-            let detailURL = URL(string: "\(Self.baseURL)/v3/exercises/\(transactionID)/\(ref.id)")!
-            var detailReq = URLRequest(url: detailURL)
-            detailReq.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            detailReq.setValue("application/json", forHTTPHeaderField: "Accept")
-            let (detailData, _) = try await session.data(for: detailReq)
-            if let activity = parseExerciseDetail(detailData, transactionID: transactionID) {
-                activities.append(activity)
-            }
-        }
-
-        // 4. Commit transaction
-        var commitRequest = URLRequest(url: listURL)
-        commitRequest.httpMethod = "PUT"
-        commitRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        _ = try await session.data(for: commitRequest)
-
-        return activities
-    }
-
-    // MARK: - Parsing
-
-    private func fetchCurrentUserID() async throws -> String {
-        let url = URL(string: "\(Self.baseURL)/v3/users/me")!
+        let url = URL(string: "\(Self.baseURL)/v3/exercises")!
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, _) = try await session.data(for: request)
-        return try parseUserID(from: data)
+
+        let (data, response) = try await session.data(for: request)
+        let http = response as! HTTPURLResponse
+
+        #if DEBUG
+        print("📡 GET /v3/exercises: HTTP \(http.statusCode)")
+        if let body = String(data: data, encoding: .utf8) {
+            print("📡 Response (\(data.count) bytes): \(body.prefix(500))")
+        }
+        #endif
+
+        if http.statusCode == 204 { return [] }
+        guard http.statusCode == 200 else {
+            throw APIError.httpError(statusCode: http.statusCode)
+        }
+
+        return try parseExercises(from: data)
     }
+
+    // MARK: - Parsing
 
     private func parseUserID(from data: Data) throws -> String {
         struct UserResponse: Decodable {
@@ -124,63 +85,81 @@ final class PolarAccessLinkClient {
         return "\(r.polarUserID)"
     }
 
-    private func parseExerciseDetail(_ data: Data, transactionID: Int) -> Activity? {
+    private func parseExercises(from data: Data) throws -> [Activity] {
         struct HeartRate: Decodable {
             let average: Int?
             let maximum: Int?
         }
-        struct Detail: Decodable {
-            let id: Int
-            let startTime: String
-            let duration: String
+        struct Exercise: Decodable {
+            let id: String
+            let start_time: String           // "2008-10-13T10:40:02"
+            let duration: String             // "PT2H44M"
             let calories: Int?
             let distance: Double?
-            let heartRate: HeartRate?
+            let heart_rate: HeartRate?
             let sport: String?
-            let hasRoute: Bool?
-            enum CodingKeys: String, CodingKey {
-                case id, duration, calories, distance, sport
-                case startTime = "start-time"
-                case heartRate = "heart-rate"
-                case hasRoute = "has-route"
-            }
+            let has_route: Bool?
+            let detailed_sport_info: String?
         }
-        guard let d = try? JSONDecoder().decode(Detail.self, from: data),
-              let dur = Self.parseISO8601Duration(d.duration)
-        else { return nil }
 
-        // Try ISO8601 with timezone first, then without
-        let startTime: Date
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime, .withDashSeparatorInDate]
-        if let date = isoFormatter.date(from: d.startTime) {
-            startTime = date
-        } else {
-            // Polar sometimes returns local time without timezone offset
+        guard let exercises = try? JSONDecoder().decode([Exercise].self, from: data) else {
+            #if DEBUG
+            print("📡 Failed to decode exercises JSON")
+            #endif
+            throw APIError.decodingFailed
+        }
+
+        #if DEBUG
+        print("📡 Parsed \(exercises.count) exercises")
+        #endif
+
+        return exercises.compactMap { e in
+            guard let dur = Self.parseISO8601Duration(e.duration) else {
+                #if DEBUG
+                print("📡 Skipping exercise \(e.id): bad duration '\(e.duration)'")
+                #endif
+                return nil
+            }
+
+            let startTime: Date
             let localFormatter = DateFormatter()
             localFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
             localFormatter.locale = Locale(identifier: "en_US_POSIX")
-            guard let date = localFormatter.date(from: d.startTime) else { return nil }
-            startTime = date
+            if let date = localFormatter.date(from: e.start_time) {
+                startTime = date
+            } else {
+                let isoFormatter = ISO8601DateFormatter()
+                isoFormatter.formatOptions = [.withInternetDateTime]
+                guard let date = isoFormatter.date(from: e.start_time) else {
+                    #if DEBUG
+                    print("📡 Skipping exercise \(e.id): bad start_time '\(e.start_time)'")
+                    #endif
+                    return nil
+                }
+                startTime = date
+            }
+
+            let dist = e.distance ?? 0.0
+            let speed = dist > 0 ? dist / dur : 0.0
+            let pace  = dist > 0 ? dur / dist : 0.0
+
+            // Use detailed_sport_info if available, fall back to sport
+            let sportStr = e.detailed_sport_info ?? e.sport ?? SportType.other.rawValue
+
+            return Activity(
+                id: e.id,
+                startTime: startTime,
+                duration: dur,
+                distance: dist,
+                sportRawValue: sportStr,
+                avgSpeed: speed,
+                avgPace: pace,
+                avgHeartRate: e.heart_rate?.average,
+                maxHeartRate: e.heart_rate?.maximum,
+                calories: e.calories,
+                hasRoute: e.has_route ?? false
+            )
         }
-
-        let dist = d.distance ?? 0.0
-        let speed = dist > 0 ? dist / dur : 0.0
-        let pace  = dist > 0 ? dur / dist : 0.0
-
-        return Activity(
-            id: "\(transactionID)-\(d.id)",
-            startTime: startTime,
-            duration: dur,
-            distance: dist,
-            sportRawValue: d.sport ?? SportType.other.rawValue,
-            avgSpeed: speed,
-            avgPace: pace,
-            avgHeartRate: d.heartRate?.average,
-            maxHeartRate: d.heartRate?.maximum,
-            calories: d.calories,
-            hasRoute: d.hasRoute ?? false
-        )
     }
 
     // Internal for testing
