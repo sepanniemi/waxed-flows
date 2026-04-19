@@ -26,27 +26,29 @@ final class HistoryImporter {
 
     func cancel() { cancelRequested = true }
 
-    func importHistory(from zipURL: URL) async throws {
+    func importHistory(from zipURL: URL, yearsBack: Int? = nil) async throws {
         isRunning = true
         defer { isRunning = false }
 
-        let workDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("polar-import-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: workDir) }
-
+        let archive: Archive
         do {
-            try await Task.detached(priority: .utility) {
-                try FileManager.default.unzipItem(at: zipURL, to: workDir)
-            }.value
+            archive = try Archive(url: zipURL, accessMode: .read)
         } catch {
             throw ImportError.invalidArchive
         }
 
-        let sessionFiles = try enumerateSessionFiles(in: workDir)
-        guard !sessionFiles.isEmpty else { throw ImportError.wrongFormat }
-
-        total = sessionFiles.count
+        // Pre-scan central directory only (no decompression).
+        let cutoff = yearsBack.map { Self.cutoffYear(yearsBack: $0) }
+        let matching: [Entry] = archive.compactMap { entry in
+            let name = (entry.path as NSString).lastPathComponent
+            guard name.hasPrefix("training-session-"), name.hasSuffix(".json") else { return nil }
+            if let cutoff, let year = Self.year(fromTrainingFileName: name), year < cutoff {
+                return nil
+            }
+            return entry
+        }
+        guard !matching.isEmpty else { throw ImportError.wrongFormat }
+        total = matching.count
 
         let existingMinutes: Set<Date> = try {
             let descriptor = FetchDescriptor<Activity>()
@@ -57,16 +59,15 @@ final class HistoryImporter {
 
         let decoder = JSONDecoder()
         var batchCount = 0
-        for fileURL in sessionFiles {
+        for entry in matching {
             defer { processed += 1 }
             if cancelRequested { break }
 
             do {
-                let data: Data = try await Task.detached(priority: .utility) {
-                    try Data(contentsOf: fileURL)
-                }.value
+                let data: Data = try await Self.extractEntry(entry, from: archive)
                 let session = try decoder.decode(GDPRTrainingSession.self, from: data)
-                let fileID = fileURL.deletingPathExtension().lastPathComponent
+                let fileID = (entry.path as NSString).lastPathComponent
+                    .replacingOccurrences(of: ".json", with: "")
                 guard let activity = session.toActivity(fileID: fileID) else {
                     failed += 1
                     continue
@@ -97,31 +98,29 @@ final class HistoryImporter {
         if cancelRequested { throw ImportError.cancelled }
     }
 
+    // Extract a single entry off-main. Returns the decompressed bytes.
+    private static func extractEntry(_ entry: Entry, from archive: Archive) async throws -> Data {
+        try await Task.detached(priority: .utility) {
+            var buf = Data()
+            _ = try archive.extract(entry) { chunk in buf.append(chunk) }
+            return buf
+        }.value
+    }
+
+    // Helpers
+    static func year(fromTrainingFileName name: String) -> Int? {
+        let prefix = "training-session-"
+        guard name.hasPrefix(prefix), name.count >= prefix.count + 4 else { return nil }
+        return Int(name.dropFirst(prefix.count).prefix(4))
+    }
+
+    static func cutoffYear(yearsBack: Int) -> Int {
+        Calendar(identifier: .gregorian).component(.year, from: Date()) - yearsBack
+    }
+
     static func minuteBucket(_ date: Date) -> Date {
         let cal = Calendar(identifier: .gregorian)
         let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: date)
         return cal.date(from: comps) ?? date
-    }
-
-    private func enumerateSessionFiles(in dir: URL) throws -> [URL] {
-        let enumerator = FileManager.default.enumerator(
-            at: dir,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles],
-            errorHandler: { url, error in
-                #if DEBUG
-                print("[HistoryImporter] enumeration error at \(url): \(error)")
-                #endif
-                return true
-            }
-        )
-        var results: [URL] = []
-        while let url = enumerator?.nextObject() as? URL {
-            let name = url.lastPathComponent
-            if name.hasPrefix("training-session-") && name.hasSuffix(".json") {
-                results.append(url)
-            }
-        }
-        return results
     }
 }

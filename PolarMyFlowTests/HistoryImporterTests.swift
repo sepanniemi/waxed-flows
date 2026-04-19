@@ -134,4 +134,43 @@ final class HistoryImporterTests: XCTestCase {
         XCTAssertEqual(importer.imported, 2)
         XCTAssertEqual(importer.failed, 1)
     }
+
+    func test_import_yearsBack4_skipsOlderFiles() async throws {
+        let thisYear = Calendar(identifier: .gregorian).component(.year, from: Date())
+        let currentYearDate = "\(thisYear)-06-15T10:00:00"
+        let zipURL = try ZipFixture.make([
+            "training-session-2019-06-15-old.json":
+                ZipFixture.session(startTime: "2019-06-15T10:00:00"),
+            "training-session-\(thisYear)-06-15-new.json":
+                ZipFixture.session(startTime: currentYearDate),
+        ])
+        defer { try? FileManager.default.removeItem(at: zipURL.deletingLastPathComponent()) }
+
+        let importer = HistoryImporter(context: context)
+        try await importer.importHistory(from: zipURL, yearsBack: 4)
+
+        XCTAssertEqual(importer.total, 1)         // only the current-year entry matched
+        XCTAssertEqual(importer.imported, 1)
+        XCTAssertEqual(importer.failed, 0)
+        let all = try repo.fetchAll()
+        XCTAssertEqual(all.count, 1)
+    }
+
+    func test_import_noUnzipTempDirCreated() async throws {
+        let tmpRoot = FileManager.default.temporaryDirectory
+        let before = Set((try? FileManager.default.contentsOfDirectory(atPath: tmpRoot.path)) ?? [])
+
+        let zipURL = try ZipFixture.make([
+            "training-session-2025-03-01-a.json":
+                ZipFixture.session(startTime: "2025-03-01T10:00:00"),
+        ])
+        defer { try? FileManager.default.removeItem(at: zipURL.deletingLastPathComponent()) }
+
+        let importer = HistoryImporter(context: context)
+        try await importer.importHistory(from: zipURL)
+
+        let after = Set((try? FileManager.default.contentsOfDirectory(atPath: tmpRoot.path)) ?? [])
+        let newlyCreated = after.subtracting(before).filter { $0.hasPrefix("polar-import-") }
+        XCTAssertTrue(newlyCreated.isEmpty, "expected no polar-import-* temp dir; found: \(newlyCreated)")
+    }
 }
