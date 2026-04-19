@@ -19,25 +19,24 @@ enum ZipFixture {
         return zipURL
     }
 
-    static func session(startTime: String = "2025-01-15T09:00:00.000",
-                        duration: String = "PT1H30M",
-                        sport: String = "CROSS_COUNTRY_SKIING",
-                        distance: Double = 15000) -> Data {
+    static func session(
+        startTime: String = "2025-01-15T09:00:00",
+        durationMillis: Int = 5_400_000,
+        sportId: String = "6",
+        distanceMeters: Double = 15000
+    ) -> Data {
         let json = """
         {
             "startTime": "\(startTime)",
-            "duration": "\(duration)",
-            "distance": \(distance),
-            "sport": "\(sport)",
+            "durationMillis": \(durationMillis),
+            "distanceMeters": \(distanceMeters),
+            "calories": 500,
+            "hrAvg": 140,
+            "hrMax": 170,
+            "sport": { "id": "\(sportId)" },
             "exercises": [{
-                "sport": "\(sport)",
-                "startTime": "\(startTime)",
-                "duration": "\(duration)",
-                "distance": \(distance),
-                "heartRate": { "avg": 140, "max": 170 },
-                "calories": 500,
-                "ascent": 100.0,
-                "descent": 95.0
+                "ascentMeters": 100.0,
+                "descentMeters": 95.0
             }]
         }
         """
