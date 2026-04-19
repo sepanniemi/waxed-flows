@@ -39,6 +39,8 @@ struct MainTabView: View {
                     .tabItem { Label("Activities", systemImage: "list.bullet") }
                 TracksPlaceholderView()
                     .tabItem { Label("Tracks", systemImage: "map") }
+                SettingsView()
+                    .tabItem { Label("Settings", systemImage: "gear") }
             }
         }
     }
