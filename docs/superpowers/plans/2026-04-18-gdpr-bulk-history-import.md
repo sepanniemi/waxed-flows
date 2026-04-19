@@ -1,0 +1,1291 @@
+# GDPR Bulk History Import Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Let the user import their full Polar training history from a GDPR data-export ZIP, removing the undocumented Flow web scraper and relying on AccessLink for ongoing sync.
+
+**Architecture:** A new `HistoryImporter` class takes a zip URL, unzips to a temp dir using `ZIPFoundation`, enumerates `training-session-*.json` files, decodes each via a `GDPRTrainingSession` DTO, maps to `Activity`, deduplicates against existing data by start-time-rounded-to-the-minute, and inserts in batches of 100 on a background `ModelContext`. A new Settings tab hosts two entry points (in-app browser → Polar export request, and document picker → zip import), plus a Share Sheet handler via `Info.plist` + `onOpenURL`.
+
+**Tech Stack:** Swift 5.9+, SwiftUI, SwiftData, `@Observable`, `ASWebAuthenticationSession`, `ZIPFoundation` (new SPM dependency), XCTest.
+
+**Spec:** `docs/superpowers/specs/2026-04-18-gdpr-bulk-history-import-design.md`
+
+---
+
+## Task 1: Remove undocumented Flow web scraper
+
+**Why first:** shrinks the surface area before we add new code, and resolves the sync-path question the spec calls for.
+
+**Files:**
+- Delete: `PolarMyFlow/API/PolarFlowWebClient.swift`
+- Delete: `PolarMyFlow/API/PolarFlowWebConstants.swift`
+- Delete: `PolarMyFlowTests/PolarFlowWebClientTests.swift`
+- Verify: nothing else imports `PolarFlowWebClient` or `PolarFlowWebConstants`
+
+- [ ] **Step 1: Confirm no remaining references**
+
+Run:
+```bash
+rg 'PolarFlowWebClient|PolarFlowWebConstants|FlowWebClientProtocol' --type swift
+```
+Expected: matches only inside the three files listed above. If any other file references them, stop and surface to the user — there's still integration to unwind.
+
+- [ ] **Step 2: Delete the three files**
+
+```bash
+rm PolarMyFlow/API/PolarFlowWebClient.swift
+rm PolarMyFlow/API/PolarFlowWebConstants.swift
+rm PolarMyFlowTests/PolarFlowWebClientTests.swift
+```
+
+- [ ] **Step 3: Remove them from the Xcode project**
+
+Open `PolarMyFlow.xcodeproj` in Xcode, delete the now-red file entries from the project navigator (choose "Remove Reference", since the files are already gone). Save the project.
+
+- [ ] **Step 4: Build and test**
+
+Run:
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' build test
+```
+Expected: build succeeds, all remaining tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "refactor: remove undocumented Flow web scraper
+
+AccessLink covers ongoing sync; the new GDPR bulk import path will
+cover historical backfill. Removing the scraper eliminates the
+undocumented-endpoint risk and simplifies the sync surface."
+```
+
+---
+
+## Task 2: Add ZIPFoundation as an SPM dependency
+
+**Why:** Foundation has no native zip support. `ZIPFoundation` is the de-facto Swift zip library, stable, MIT-licensed, no transitive deps.
+
+**Files:**
+- Modify: `PolarMyFlow.xcodeproj/project.pbxproj` (via Xcode UI — don't hand-edit)
+
+- [ ] **Step 1: Add the package in Xcode**
+
+Open Xcode. File → Add Package Dependencies… → enter `https://github.com/weichsel/ZIPFoundation` → Dependency Rule: "Up to Next Major Version", starting from `0.9.19` → Add Package. When prompted, add the `ZIPFoundation` product to both the `PolarMyFlow` app target AND the `PolarMyFlowTests` test target (the tests will need it to build fixture zips).
+
+- [ ] **Step 2: Verify by importing**
+
+Create a temporary file `PolarMyFlow/Import/_ZIPCheck.swift` with:
+```swift
+import Foundation
+import ZIPFoundation
+
+enum _ZIPCheck {
+    static func works() -> Bool { Archive.self != nil }
+}
+```
+
+- [ ] **Step 3: Build**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' build
+```
+Expected: build succeeds. If the import fails, re-check the target memberships in Xcode.
+
+- [ ] **Step 4: Remove the verification file**
+
+```bash
+rm PolarMyFlow/Import/_ZIPCheck.swift
+```
+Then remove its reference in Xcode.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "build: add ZIPFoundation SPM dependency for bulk import"
+```
+
+---
+
+## Task 3: Add `ImportError` and `GDPRTrainingSession` DTO
+
+**Why:** these are pure-data types with no SwiftData or networking — ideal for TDD-first. Establishes the decoding contract the rest of the pipeline will rely on.
+
+**Files:**
+- Create: `PolarMyFlow/Import/ImportError.swift`
+- Create: `PolarMyFlow/Import/GDPRTrainingSession.swift`
+- Create: `PolarMyFlowTests/GDPRTrainingSessionTests.swift`
+
+- [ ] **Step 1: Write the failing DTO tests**
+
+Create `PolarMyFlowTests/GDPRTrainingSessionTests.swift`:
+
+```swift
+import XCTest
+@testable import PolarMyFlow
+
+final class GDPRTrainingSessionTests: XCTestCase {
+
+    func test_decode_fullFields_mapsToActivity() throws {
+        let json = #"""
+        {
+            "startTime": "2025-01-15T09:00:00.000",
+            "duration": "PT1H30M",
+            "distance": 15000.0,
+            "sport": "CROSS_COUNTRY_SKIING",
+            "exercises": [{
+                "sport": "CROSS_COUNTRY_SKIING",
+                "startTime": "2025-01-15T09:00:00.000",
+                "duration": "PT1H30M",
+                "distance": 15000.0,
+                "heartRate": { "avg": 142, "max": 170 },
+                "calories": 800,
+                "ascent": 120.5,
+                "descent": 115.0
+            }]
+        }
+        """#.data(using: .utf8)!
+
+        let session = try JSONDecoder().decode(GDPRTrainingSession.self, from: json)
+        let activity = try XCTUnwrap(session.toActivity(fileID: "training-session-2025-01-15-12345"))
+
+        XCTAssertEqual(activity.id, "training-session-2025-01-15-12345")
+        XCTAssertEqual(activity.duration, 5400, accuracy: 0.1)
+        XCTAssertEqual(activity.distance, 15000)
+        XCTAssertEqual(activity.sportRawValue, "CROSS_COUNTRY_SKIING")
+        XCTAssertEqual(activity.avgHeartRate, 142)
+        XCTAssertEqual(activity.maxHeartRate, 170)
+        XCTAssertEqual(activity.calories, 800)
+        XCTAssertEqual(activity.ascent, 120.5)
+        XCTAssertEqual(activity.descent, 115.0)
+    }
+
+    func test_decode_missingOptionalFields_stillMaps() throws {
+        let json = #"""
+        {
+            "startTime": "2025-03-01T07:00:00.000",
+            "duration": "PT45M",
+            "sport": "STRENGTH_TRAINING",
+            "exercises": [{
+                "sport": "STRENGTH_TRAINING",
+                "startTime": "2025-03-01T07:00:00.000",
+                "duration": "PT45M"
+            }]
+        }
+        """#.data(using: .utf8)!
+
+        let session = try JSONDecoder().decode(GDPRTrainingSession.self, from: json)
+        let activity = try XCTUnwrap(session.toActivity(fileID: "id-123"))
+
+        XCTAssertEqual(activity.distance, 0.0)
+        XCTAssertEqual(activity.avgSpeed, 0.0)
+        XCTAssertNil(activity.avgHeartRate)
+        XCTAssertNil(activity.calories)
+        XCTAssertNil(activity.ascent)
+    }
+
+    func test_decode_invalidStartTime_returnsNilFromMapper() throws {
+        let json = #"""
+        {
+            "startTime": "not-a-date",
+            "duration": "PT1H",
+            "sport": "RUNNING",
+            "exercises": [{
+                "sport": "RUNNING",
+                "startTime": "not-a-date",
+                "duration": "PT1H"
+            }]
+        }
+        """#.data(using: .utf8)!
+
+        let session = try JSONDecoder().decode(GDPRTrainingSession.self, from: json)
+        XCTAssertNil(session.toActivity(fileID: "id"))
+    }
+
+    func test_decode_unknownSport_mapsToOther() throws {
+        let json = #"""
+        {
+            "startTime": "2025-05-01T12:00:00.000",
+            "duration": "PT30M",
+            "sport": "ZORBING",
+            "exercises": [{
+                "sport": "ZORBING",
+                "startTime": "2025-05-01T12:00:00.000",
+                "duration": "PT30M"
+            }]
+        }
+        """#.data(using: .utf8)!
+
+        let session = try JSONDecoder().decode(GDPRTrainingSession.self, from: json)
+        let activity = try XCTUnwrap(session.toActivity(fileID: "id"))
+        XCTAssertEqual(activity.sportType, .other)
+        XCTAssertEqual(activity.sportRawValue, "ZORBING")
+    }
+}
+```
+
+Add this file to the `PolarMyFlowTests` target in Xcode.
+
+- [ ] **Step 2: Run tests — verify they fail**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/GDPRTrainingSessionTests
+```
+Expected: compile failure — `GDPRTrainingSession` is undefined.
+
+- [ ] **Step 3: Create `ImportError`**
+
+Create `PolarMyFlow/Import/ImportError.swift`:
+
+```swift
+import Foundation
+
+enum ImportError: Error, LocalizedError {
+    case invalidArchive
+    case wrongFormat
+    case cancelled
+    case ioFailure(Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidArchive: return "Not a valid Polar export."
+        case .wrongFormat:    return "This doesn't look like a Polar data export."
+        case .cancelled:      return "Import cancelled."
+        case .ioFailure(let e): return "Import failed: \(e.localizedDescription)"
+        }
+    }
+}
+```
+
+Add to Xcode project, `PolarMyFlow` target.
+
+- [ ] **Step 4: Create `GDPRTrainingSession`**
+
+Create `PolarMyFlow/Import/GDPRTrainingSession.swift`:
+
+```swift
+import Foundation
+
+// NOTE: This schema is a best-effort match for Polar's GDPR export based on
+// publicly observed exports. Verify against an actual user export before
+// release; adjust keys / nesting here if the real schema differs.
+struct GDPRTrainingSession: Decodable {
+    let startTime: String
+    let duration: String
+    let distance: Double?
+    let sport: String?
+    let exercises: [Exercise]?
+
+    struct Exercise: Decodable {
+        let sport: String?
+        let startTime: String?
+        let duration: String?
+        let distance: Double?
+        let heartRate: HeartRate?
+        let calories: Int?
+        let ascent: Double?
+        let descent: Double?
+    }
+
+    struct HeartRate: Decodable {
+        let avg: Int?
+        let max: Int?
+    }
+
+    // Maps the session + its first exercise into an Activity. Returns nil if
+    // start time or duration can't be parsed. fileID is used as Activity.id
+    // because the JSON itself does not carry a stable numeric ID we can trust.
+    func toActivity(fileID: String) -> Activity? {
+        guard let dur = Self.parseISO8601Duration(duration) else { return nil }
+        guard let start = Self.parseDate(startTime) else { return nil }
+
+        let ex = exercises?.first
+        let sportStr = ex?.sport ?? sport ?? SportType.other.rawValue
+        let dist = ex?.distance ?? distance ?? 0.0
+        let speed = dist > 0 ? dist / dur : 0.0
+        let pace  = dist > 0 ? dur / dist : 0.0
+
+        return Activity(
+            id: fileID,
+            startTime: start,
+            duration: dur,
+            distance: dist,
+            sportRawValue: sportStr,
+            avgSpeed: speed,
+            avgPace: pace,
+            avgHeartRate: ex?.heartRate?.avg,
+            maxHeartRate: ex?.heartRate?.max,
+            ascent: ex?.ascent,
+            descent: ex?.descent,
+            calories: ex?.calories,
+            hasRoute: false
+        )
+    }
+
+    // Polar GDPR export uses local-time strings like "2025-01-15T09:00:00.000"
+    // (no timezone offset). Parse as POSIX local time.
+    static func parseDate(_ string: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
+        if let d = formatter.date(from: string) { return d }
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        return formatter.date(from: string)
+    }
+
+    // Mirrors PolarAccessLinkClient.parseISO8601Duration for PT-prefixed
+    // durations: "PT1H30M0S", "PT42M1S", "PT30S".
+    static func parseISO8601Duration(_ string: String) -> TimeInterval? {
+        guard string.hasPrefix("PT") else { return nil }
+        var remaining = String(string.dropFirst(2))
+        var total: Double = 0
+        for (unit, multiplier) in [("H", 3600.0), ("M", 60.0), ("S", 1.0)] {
+            if let range = remaining.range(of: unit) {
+                let valueStr = String(remaining[remaining.startIndex..<range.lowerBound])
+                if let value = Double(valueStr) { total += value * multiplier }
+                remaining = String(remaining[range.upperBound...])
+            }
+        }
+        return total > 0 ? total : nil
+    }
+}
+```
+
+Add to Xcode project, `PolarMyFlow` target.
+
+- [ ] **Step 5: Run tests — verify they pass**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/GDPRTrainingSessionTests
+```
+Expected: all four tests pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add ImportError and GDPRTrainingSession DTO
+
+Decodes Polar GDPR training-session JSON into Activity.  Schema is a
+best-effort match pending verification against a real export."
+```
+
+---
+
+## Task 4: `HistoryImporter` — unzip and enumerate (happy path)
+
+**Why:** The riskiest mechanical piece. Get zip reading working in isolation before layering dedup, progress, and cancel.
+
+**Files:**
+- Create: `PolarMyFlow/Import/HistoryImporter.swift`
+- Create: `PolarMyFlowTests/HistoryImporterTests.swift`
+- Create: `PolarMyFlowTests/Helpers/ZipFixture.swift`
+
+- [ ] **Step 1: Write a fixture helper**
+
+Create `PolarMyFlowTests/Helpers/ZipFixture.swift`:
+
+```swift
+import Foundation
+import ZIPFoundation
+
+// Builds a fresh zip at a temp URL from a map of relative path → file bytes.
+// Returns the URL of the created zip. Caller is responsible for cleanup.
+enum ZipFixture {
+    static func make(_ entries: [String: Data]) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let zipURL = dir.appendingPathComponent("test.zip")
+
+        guard let archive = Archive(url: zipURL, accessMode: .create) else {
+            throw NSError(domain: "ZipFixture", code: 1)
+        }
+        for (path, data) in entries {
+            try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(data.count)) { position, size in
+                data.subdata(in: Int(position)..<Int(position) + size)
+            }
+        }
+        return zipURL
+    }
+
+    static func session(startTime: String = "2025-01-15T09:00:00.000",
+                        duration: String = "PT1H30M",
+                        sport: String = "CROSS_COUNTRY_SKIING",
+                        distance: Double = 15000) -> Data {
+        let json = """
+        {
+            "startTime": "\(startTime)",
+            "duration": "\(duration)",
+            "distance": \(distance),
+            "sport": "\(sport)",
+            "exercises": [{
+                "sport": "\(sport)",
+                "startTime": "\(startTime)",
+                "duration": "\(duration)",
+                "distance": \(distance),
+                "heartRate": { "avg": 140, "max": 170 },
+                "calories": 500,
+                "ascent": 100.0,
+                "descent": 95.0
+            }]
+        }
+        """
+        return json.data(using: .utf8)!
+    }
+}
+```
+
+Add to Xcode project, `PolarMyFlowTests` target.
+
+- [ ] **Step 2: Write the failing test**
+
+Create `PolarMyFlowTests/HistoryImporterTests.swift`:
+
+```swift
+import XCTest
+import SwiftData
+@testable import PolarMyFlow
+
+final class HistoryImporterTests: XCTestCase {
+    var context: ModelContext!
+    var repo: ActivityRepository!
+
+    override func setUpWithError() throws {
+        context = try makeTestContext()
+        repo = ActivityRepository(context: context)
+    }
+
+    func test_import_validZip_insertsActivities() async throws {
+        let zipURL = try ZipFixture.make([
+            "training-session-2025-01-15-aaa.json":
+                ZipFixture.session(startTime: "2025-01-15T09:00:00.000"),
+            "training-session-2025-02-10-bbb.json":
+                ZipFixture.session(startTime: "2025-02-10T07:30:00.000"),
+        ])
+        defer { try? FileManager.default.removeItem(at: zipURL.deletingLastPathComponent()) }
+
+        let importer = HistoryImporter(context: context)
+        try await importer.importHistory(from: zipURL)
+
+        let all = try repo.fetchAll()
+        XCTAssertEqual(all.count, 2)
+        XCTAssertEqual(importer.imported, 2)
+        XCTAssertEqual(importer.failed, 0)
+    }
+}
+```
+
+Add to Xcode project, `PolarMyFlowTests` target.
+
+- [ ] **Step 3: Run the test — verify it fails**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/HistoryImporterTests/test_import_validZip_insertsActivities
+```
+Expected: compile failure — `HistoryImporter` undefined.
+
+- [ ] **Step 4: Implement the minimal importer**
+
+Create `PolarMyFlow/Import/HistoryImporter.swift`:
+
+```swift
+import Foundation
+import SwiftData
+import ZIPFoundation
+
+@Observable
+final class HistoryImporter {
+    var total: Int = 0
+    var processed: Int = 0
+    var imported: Int = 0
+    var skipped: Int = 0
+    var failed: Int = 0
+    var isRunning: Bool = false
+    var cancelRequested: Bool = false
+
+    private let context: ModelContext
+
+    init(context: ModelContext) {
+        self.context = context
+    }
+
+    func cancel() { cancelRequested = true }
+
+    func importHistory(from zipURL: URL) async throws {
+        isRunning = true
+        defer { isRunning = false }
+
+        let workDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("polar-import-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: workDir) }
+
+        do {
+            try FileManager.default.unzipItem(at: zipURL, to: workDir)
+        } catch {
+            throw ImportError.invalidArchive
+        }
+
+        let sessionFiles = try enumerateSessionFiles(in: workDir)
+        guard !sessionFiles.isEmpty else { throw ImportError.wrongFormat }
+
+        total = sessionFiles.count
+        for fileURL in sessionFiles {
+            defer { processed += 1 }
+            guard !cancelRequested else { throw ImportError.cancelled }
+            do {
+                let data = try Data(contentsOf: fileURL)
+                let session = try JSONDecoder().decode(GDPRTrainingSession.self, from: data)
+                let fileID = fileURL.deletingPathExtension().lastPathComponent
+                guard let activity = session.toActivity(fileID: fileID) else {
+                    failed += 1
+                    continue
+                }
+                context.insert(activity)
+                imported += 1
+            } catch {
+                failed += 1
+            }
+        }
+        try context.save()
+    }
+
+    private func enumerateSessionFiles(in dir: URL) throws -> [URL] {
+        let enumerator = FileManager.default.enumerator(
+            at: dir,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        )
+        var results: [URL] = []
+        while let url = enumerator?.nextObject() as? URL {
+            let name = url.lastPathComponent
+            if name.hasPrefix("training-session-") && name.hasSuffix(".json") {
+                results.append(url)
+            }
+        }
+        return results
+    }
+}
+```
+
+Add to Xcode project, `PolarMyFlow` target.
+
+- [ ] **Step 5: Run the test — verify it passes**
+
+Same command as Step 3. Expected: test passes.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add HistoryImporter happy-path zip→Activity pipeline"
+```
+
+---
+
+## Task 5: `HistoryImporter` — dedup by minute-precision start time
+
+**Why:** Cross-source dedup against AccessLink is a core spec requirement.
+
+**Files:**
+- Modify: `PolarMyFlow/Import/HistoryImporter.swift`
+- Modify: `PolarMyFlowTests/HistoryImporterTests.swift`
+
+- [ ] **Step 1: Add the failing test**
+
+Append to `HistoryImporterTests`:
+
+```swift
+func test_import_skipsActivityIfMinutePrecisionStartTimeExists() async throws {
+    // Pre-populate DB with an activity at 2025-01-15 09:00:23 — should collide
+    // with the imported one that starts at 09:00:00 (same minute).
+    let cal = Calendar(identifier: .gregorian)
+    let preExisting = cal.date(from: DateComponents(
+        year: 2025, month: 1, day: 15, hour: 9, minute: 0, second: 23
+    ))!
+    try repo.save(makeActivity(id: "pre-existing", startTime: preExisting))
+
+    let zipURL = try ZipFixture.make([
+        "training-session-2025-01-15-aaa.json":
+            ZipFixture.session(startTime: "2025-01-15T09:00:00.000"),
+        "training-session-2025-02-10-bbb.json":
+            ZipFixture.session(startTime: "2025-02-10T07:30:00.000"),
+    ])
+    defer { try? FileManager.default.removeItem(at: zipURL.deletingLastPathComponent()) }
+
+    let importer = HistoryImporter(context: context)
+    try await importer.importHistory(from: zipURL)
+
+    let all = try repo.fetchAll()
+    XCTAssertEqual(all.count, 2)
+    XCTAssertTrue(all.contains { $0.id == "pre-existing" })
+    XCTAssertEqual(importer.imported, 1)
+    XCTAssertEqual(importer.skipped, 1)
+}
+```
+
+- [ ] **Step 2: Run it — verify it fails**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/HistoryImporterTests/test_import_skipsActivityIfMinutePrecisionStartTimeExists
+```
+Expected: fail — `all.count == 3`, `imported == 2`, `skipped == 0`.
+
+- [ ] **Step 3: Implement dedup**
+
+In `HistoryImporter.swift`, inside `importHistory`, after `total = sessionFiles.count` and before the loop, build the dedup set:
+
+```swift
+let existingMinutes: Set<Date> = try {
+    let descriptor = FetchDescriptor<Activity>()
+    let all = try context.fetch(descriptor)
+    return Set(all.map { Self.minuteBucket($0.startTime) })
+}()
+var seenMinutes = existingMinutes
+```
+
+In the loop, after `guard let activity = session.toActivity(...)` succeeds:
+
+```swift
+let bucket = Self.minuteBucket(activity.startTime)
+if seenMinutes.contains(bucket) {
+    skipped += 1
+    continue
+}
+seenMinutes.insert(bucket)
+context.insert(activity)
+imported += 1
+```
+
+Add the helper at the bottom of the class:
+
+```swift
+static func minuteBucket(_ date: Date) -> Date {
+    let cal = Calendar(identifier: .gregorian)
+    let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+    return cal.date(from: comps) ?? date
+}
+```
+
+- [ ] **Step 4: Run all importer tests — verify they pass**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/HistoryImporterTests
+```
+Expected: both tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: dedup bulk import by minute-precision start time
+
+Prevents duplicates when a user runs a GDPR import after AccessLink
+has already pulled the last 30 days."
+```
+
+---
+
+## Task 6: `HistoryImporter` — batched saves, cancellation, and partial commits
+
+**Why:** Large imports need bounded memory and crash-safety. Cancellation must keep already-saved work.
+
+**Files:**
+- Modify: `PolarMyFlow/Import/HistoryImporter.swift`
+- Modify: `PolarMyFlowTests/HistoryImporterTests.swift`
+
+- [ ] **Step 1: Add the failing tests**
+
+Append to `HistoryImporterTests`:
+
+```swift
+func test_import_cancelMidStream_commitsPartialProgress() async throws {
+    // Build a zip with 250 sessions so we're guaranteed to cross a batch boundary.
+    var entries: [String: Data] = [:]
+    for i in 0..<250 {
+        let minute = String(format: "%02d", i % 60)
+        let hour = String(format: "%02d", (i / 60) % 24)
+        let day = String(format: "%02d", max(1, (i / (60*24)) + 1))
+        let start = "2025-06-\(day)T\(hour):\(minute):00.000"
+        entries["training-session-2025-06-\(day)-\(i).json"] =
+            ZipFixture.session(startTime: start)
+    }
+    let zipURL = try ZipFixture.make(entries)
+    defer { try? FileManager.default.removeItem(at: zipURL.deletingLastPathComponent()) }
+
+    let importer = HistoryImporter(context: context)
+    importer.cancelAfter = 100   // test-only hook
+
+    do {
+        try await importer.importHistory(from: zipURL)
+        XCTFail("expected cancellation to throw")
+    } catch ImportError.cancelled {
+        // expected
+    }
+
+    let all = try repo.fetchAll()
+    XCTAssertGreaterThanOrEqual(all.count, 100)  // at least one batch persisted
+    XCTAssertLessThan(all.count, 250)            // but not all
+}
+```
+
+- [ ] **Step 2: Run it — verify it fails**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/HistoryImporterTests/test_import_cancelMidStream_commitsPartialProgress
+```
+Expected: fail — `cancelAfter` property undefined.
+
+- [ ] **Step 3: Implement batched saves + test cancellation hook**
+
+In `HistoryImporter.swift`, add near the top of the class:
+
+```swift
+// Test-only: trigger cancellation after N imported activities. Ignored when nil.
+var cancelAfter: Int?
+
+private static let batchSize = 100
+```
+
+Replace the import loop in `importHistory` with:
+
+```swift
+var batchCount = 0
+for fileURL in sessionFiles {
+    defer { processed += 1 }
+    if cancelRequested { break }
+
+    do {
+        let data = try Data(contentsOf: fileURL)
+        let session = try JSONDecoder().decode(GDPRTrainingSession.self, from: data)
+        let fileID = fileURL.deletingPathExtension().lastPathComponent
+        guard let activity = session.toActivity(fileID: fileID) else {
+            failed += 1
+            continue
+        }
+        let bucket = Self.minuteBucket(activity.startTime)
+        if seenMinutes.contains(bucket) {
+            skipped += 1
+            continue
+        }
+        seenMinutes.insert(bucket)
+        context.insert(activity)
+        imported += 1
+        batchCount += 1
+
+        if batchCount >= Self.batchSize {
+            try context.save()
+            batchCount = 0
+        }
+
+        if let limit = cancelAfter, imported >= limit {
+            cancelRequested = true
+        }
+    } catch {
+        failed += 1
+    }
+}
+try context.save()
+if cancelRequested { throw ImportError.cancelled }
+```
+
+- [ ] **Step 4: Run the new test — verify it passes**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/HistoryImporterTests/test_import_cancelMidStream_commitsPartialProgress
+```
+Expected: test passes.
+
+- [ ] **Step 5: Re-run full importer suite**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/HistoryImporterTests
+```
+Expected: all importer tests pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat: batched saves and cancellation in HistoryImporter
+
+Saves every 100 activities to bound memory and keep partial progress
+on cancel or crash."
+```
+
+---
+
+## Task 7: `HistoryImporter` — error paths
+
+**Why:** invalid/wrong-format inputs must surface distinct errors for the UI toast strings.
+
+**Files:**
+- Modify: `PolarMyFlowTests/HistoryImporterTests.swift`
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `HistoryImporterTests`:
+
+```swift
+func test_import_invalidZip_throwsInvalidArchive() async throws {
+    let bogus = FileManager.default.temporaryDirectory
+        .appendingPathComponent("bogus-\(UUID().uuidString).zip")
+    try Data("not a zip".utf8).write(to: bogus)
+    defer { try? FileManager.default.removeItem(at: bogus) }
+
+    let importer = HistoryImporter(context: context)
+    do {
+        try await importer.importHistory(from: bogus)
+        XCTFail("expected throw")
+    } catch ImportError.invalidArchive {
+        // expected
+    }
+}
+
+func test_import_zipWithNoSessionFiles_throwsWrongFormat() async throws {
+    let zipURL = try ZipFixture.make([
+        "readme.txt": Data("hello".utf8),
+        "physical-information.json": Data("{}".utf8),
+    ])
+    defer { try? FileManager.default.removeItem(at: zipURL.deletingLastPathComponent()) }
+
+    let importer = HistoryImporter(context: context)
+    do {
+        try await importer.importHistory(from: zipURL)
+        XCTFail("expected throw")
+    } catch ImportError.wrongFormat {
+        // expected
+    }
+}
+
+func test_import_malformedSessionCountedAsFailed_restContinue() async throws {
+    let zipURL = try ZipFixture.make([
+        "training-session-2025-01-15-aaa.json":
+            ZipFixture.session(startTime: "2025-01-15T09:00:00.000"),
+        "training-session-2025-01-16-bbb.json":
+            Data("{ not valid json".utf8),
+        "training-session-2025-02-10-ccc.json":
+            ZipFixture.session(startTime: "2025-02-10T07:30:00.000"),
+    ])
+    defer { try? FileManager.default.removeItem(at: zipURL.deletingLastPathComponent()) }
+
+    let importer = HistoryImporter(context: context)
+    try await importer.importHistory(from: zipURL)
+
+    XCTAssertEqual(importer.imported, 2)
+    XCTAssertEqual(importer.failed, 1)
+}
+```
+
+- [ ] **Step 2: Run tests — verify they pass**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/HistoryImporterTests
+```
+Expected: all three new tests pass — the implementation from Task 4–6 already throws `invalidArchive`, `wrongFormat`, and counts failures. If any fails, fix `HistoryImporter` before moving on.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add -A
+git commit -m "test: pin HistoryImporter error paths for invalid/wrong-format/malformed inputs"
+```
+
+---
+
+## Task 8: Register ZIP document type in Info.plist
+
+**Why:** without this, the Share Sheet won't surface PolarMyFlow as a handler for downloaded zips.
+
+**Files:**
+- Modify: `PolarMyFlow/Info.plist`
+
+- [ ] **Step 1: Add `CFBundleDocumentTypes`**
+
+Edit `PolarMyFlow/Info.plist`. Inside the top-level `<dict>`, add:
+
+```xml
+<key>CFBundleDocumentTypes</key>
+<array>
+    <dict>
+        <key>CFBundleTypeName</key>
+        <string>Polar Data Export</string>
+        <key>CFBundleTypeRole</key>
+        <string>Viewer</string>
+        <key>LSHandlerRank</key>
+        <string>Alternate</string>
+        <key>LSItemContentTypes</key>
+        <array>
+            <string>public.zip-archive</string>
+        </array>
+    </dict>
+</array>
+```
+
+`LSHandlerRank=Alternate` means we offer to handle zips but don't claim to be the default handler.
+
+- [ ] **Step 2: Build the app**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' build
+```
+Expected: build succeeds.
+
+- [ ] **Step 3: Manual verification (simulator)**
+
+Run the app on the iOS simulator. In the simulator, open Safari, download any `.zip`, tap Share. Confirm "PolarMyFlow" appears in the share-target list. If not, check the Info.plist edit and rebuild. (Re-install of the app may be required — `xcrun simctl uninstall booted com.personal.polarmyflow` then rebuild.)
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add PolarMyFlow/Info.plist
+git commit -m "feat: register app as handler for .zip share/open-in"
+```
+
+---
+
+## Task 9: `ImportProgressView`
+
+**Why:** minimal standalone UI component that reads the importer's `@Observable` state. Easy to preview and iterate.
+
+**Files:**
+- Create: `PolarMyFlow/Features/Settings/ImportProgressView.swift`
+
+- [ ] **Step 1: Implement the view**
+
+Create `PolarMyFlow/Features/Settings/ImportProgressView.swift`:
+
+```swift
+import SwiftUI
+
+struct ImportProgressView: View {
+    @Bindable var importer: HistoryImporter
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                ProgressView(value: Double(importer.processed),
+                             total: Double(max(importer.total, 1)))
+                Text("\(importer.processed) / \(importer.total)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 16) {
+                Label("\(importer.imported)", systemImage: "checkmark.circle")
+                    .foregroundStyle(.green)
+                if importer.skipped > 0 {
+                    Label("\(importer.skipped) duplicates",
+                          systemImage: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(.secondary)
+                }
+                if importer.failed > 0 {
+                    Label("\(importer.failed) errors",
+                          systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                }
+            }
+            .font(.caption)
+
+            Button("Cancel") { importer.cancel() }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+        .padding()
+        .background(.bar, in: .rect(cornerRadius: 10))
+    }
+}
+```
+
+Add to Xcode project, `PolarMyFlow` target.
+
+- [ ] **Step 2: Build**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' build
+```
+Expected: build succeeds.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add -A
+git commit -m "feat: ImportProgressView for bulk history import"
+```
+
+---
+
+## Task 10: `SettingsView` with both entry points
+
+**Why:** the user-facing home for requesting the export and picking the downloaded zip. Also rehomes debug settings.
+
+**Files:**
+- Create: `PolarMyFlow/Features/Settings/SettingsView.swift`
+- Modify: `PolarMyFlow/ContentView.swift` (add Settings tab)
+
+- [ ] **Step 1: Implement `SettingsView`**
+
+Create `PolarMyFlow/Features/Settings/SettingsView.swift`:
+
+```swift
+import SwiftUI
+import SwiftData
+import AuthenticationServices
+
+struct SettingsView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(AuthManager.self) private var authManager
+    @State private var importer: HistoryImporter?
+    @State private var showExportInstructions = false
+    @State private var showFileImporter = false
+    @State private var errorMessage: String?
+    @State private var completionMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Import history") {
+                    Button {
+                        openPolarExportPage()
+                    } label: {
+                        Label("Request data export from Polar",
+                              systemImage: "arrow.down.doc")
+                    }
+                    Button {
+                        showFileImporter = true
+                    } label: {
+                        Label("Import from file…",
+                              systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(importer?.isRunning == true)
+
+                    if let importer, importer.isRunning || importer.processed > 0 {
+                        ImportProgressView(importer: importer)
+                    }
+                    if let completionMessage {
+                        Text(completionMessage).foregroundStyle(.secondary)
+                    }
+                    if let errorMessage {
+                        Text(errorMessage).foregroundStyle(.red)
+                    }
+                }
+
+                #if DEBUG
+                Section("Debug") {
+                    NavigationLink("Debug settings") { DebugSettingsView() }
+                }
+                #endif
+
+                Section {
+                    Button("Sign out", role: .destructive) {
+                        try? authManager.signOut()
+                    }
+                }
+            }
+            .navigationTitle("Settings")
+            .alert("Export requested", isPresented: $showExportInstructions) {
+                Button("Got it", role: .cancel) {}
+            } message: {
+                Text("Polar will email you a download link within a few hours to a few days. When it arrives, tap the link and choose PolarMyFlow to share the ZIP into the app.")
+            }
+            .fileImporter(
+                isPresented: $showFileImporter,
+                allowedContentTypes: [.zip]
+            ) { result in
+                switch result {
+                case .success(let url): Task { await runImport(url: url) }
+                case .failure(let error): errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func openPolarExportPage() {
+        let url = URL(string: "https://account.polar.com/")!
+        Task { @MainActor in
+            UIApplication.shared.open(url) { _ in
+                showExportInstructions = true
+            }
+        }
+    }
+
+    @MainActor
+    func runImport(url: URL) async {
+        errorMessage = nil
+        completionMessage = nil
+        let needsScope = url.startAccessingSecurityScopedResource()
+        defer { if needsScope { url.stopAccessingSecurityScopedResource() } }
+
+        let imp = HistoryImporter(context: ModelContext(modelContext.container))
+        importer = imp
+        do {
+            try await imp.importHistory(from: url)
+            completionMessage = "Imported \(imp.imported) activities. "
+                + "\(imp.skipped) duplicates skipped, \(imp.failed) files couldn't be read."
+        } catch ImportError.cancelled {
+            completionMessage = "Import cancelled. Kept \(imp.imported) activities."
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+```
+
+Add to Xcode project, `PolarMyFlow` target.
+
+- [ ] **Step 2: Add Settings as a tab**
+
+Edit `PolarMyFlow/ContentView.swift`. In `MainTabView`'s `TabView`, add after the Tracks tab:
+
+```swift
+SettingsView()
+    .tabItem { Label("Settings", systemImage: "gear") }
+```
+
+- [ ] **Step 3: Build and run in simulator, manual smoke test**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' build
+```
+
+Then run the app. Tap Settings tab → confirm both buttons visible → tap "Import from file…" → confirm file picker opens and filters to `.zip`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "feat: Settings tab with Polar export request + file picker import"
+```
+
+---
+
+## Task 11: Wire the Share Sheet via `onOpenURL`
+
+**Why:** completes the "tap link in Mail → PolarMyFlow handles it" flow.
+
+**Files:**
+- Modify: `PolarMyFlow/PolarMyFlowApp.swift`
+
+- [ ] **Step 1: Add shared state for inbound zips**
+
+Edit `PolarMyFlow/PolarMyFlowApp.swift`. Add a state property alongside the existing ones:
+
+```swift
+@State private var inboundZipURL: URL?
+```
+
+- [ ] **Step 2: Hook `onOpenURL` on the WindowGroup's root**
+
+Inside the `WindowGroup` body, after the existing `.onChange` (around line 32), add:
+
+```swift
+.onOpenURL { url in
+    guard url.pathExtension.lowercased() == "zip" else { return }
+    inboundZipURL = url
+}
+```
+
+- [ ] **Step 3: Pass it down to `ContentView`**
+
+Modify `ContentView` to accept an optional inbound zip and to present `SettingsView` with it. Simplest approach: broadcast via a `Notification`. Edit `PolarMyFlowApp.swift`:
+
+```swift
+.onChange(of: inboundZipURL) { _, url in
+    guard let url else { return }
+    NotificationCenter.default.post(name: .importZipReceived, object: url)
+    inboundZipURL = nil
+}
+```
+
+Add the notification name near the top of the file (outside the struct):
+
+```swift
+extension Notification.Name {
+    static let importZipReceived = Notification.Name("polarmyflow.importZipReceived")
+}
+```
+
+- [ ] **Step 4: Observe the notification in `SettingsView`**
+
+In `SettingsView`, add before `.fileImporter(...)`:
+
+```swift
+.onReceive(NotificationCenter.default.publisher(for: .importZipReceived)) { note in
+    guard let url = note.object as? URL else { return }
+    Task { await runImport(url: url) }
+}
+```
+
+(The user may be on a different tab when the URL arrives. Simple first pass: import only fires when the user is on Settings. Acceptable limitation — the typical flow is Settings → Request export → later returns and taps link, which re-opens the app on the Settings tab given how iOS resumes. If this proves annoying in practice, switch the tab programmatically.)
+
+- [ ] **Step 5: Build and manual smoke test**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' build
+```
+
+Run in simulator. From Safari inside the simulator, download any zip, tap Share → PolarMyFlow → confirm the app opens to Settings and begins import (pick a real GDPR export zip if available; otherwise expect the `wrongFormat` toast).
+
+- [ ] **Step 6: Run the full test suite**
+
+```bash
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test
+```
+Expected: all tests pass.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "feat: handle inbound zips from Share Sheet via onOpenURL"
+```
+
+---
+
+## Task 12: End-to-end manual test plan
+
+**Why:** the zip format assumption can only be verified against a real export.
+
+- [ ] **Step 1: Obtain a real GDPR export**
+
+Request an export of your own data at `https://account.polar.com/` (Settings → Data → Export data). Wait for the email.
+
+- [ ] **Step 2: Compare the real schema to `GDPRTrainingSession`**
+
+Unzip the export locally. Open a `training-session-*.json`. Compare top-level keys and the `exercises[0]` shape to the DTO in `PolarMyFlow/Import/GDPRTrainingSession.swift`. If field names differ (e.g. `sportId` instead of `sport`, or top-level `exercises` is absent), update the DTO and its tests, re-run `GDPRTrainingSessionTests`, and commit the adjustment with a message like `fix: adjust GDPR DTO to match actual export schema`.
+
+- [ ] **Step 3: Run the end-to-end flow**
+
+Install the app on a real device or simulator with the zip saved to Files. From Settings → "Import from file…" select the zip. Verify:
+
+- Progress pill appears and counts up.
+- Cancel button interrupts and persists partial progress.
+- Final message accurately reports imported / skipped / failed counts.
+- Activity list and Dashboard populate with imported activities.
+- Running an AccessLink sync after import does not double-insert recent activities.
+
+- [ ] **Step 4: Document any deviations**
+
+If Step 2 required schema changes, add a brief paragraph to the design spec (`docs/superpowers/specs/2026-04-18-gdpr-bulk-history-import-design.md`) under "Open items" converting the assumption to a confirmed schema note. Commit.
+
+---
+
+## Self-Review Notes
+
+- **Spec coverage:**
+  - Moment 1 (request export) → Task 10 (Settings button + info sheet).
+  - Moment 2 (import zip) → Task 8 (Info.plist), Task 10 (file picker), Task 11 (share sheet).
+  - Import pipeline → Tasks 3–7.
+  - Dedup → Task 5.
+  - Concurrency / background context → Task 10 (runImport uses `ModelContext(modelContext.container)`).
+  - Error handling → Task 7 + Task 10 UI surface.
+  - Deletion of Flow web client → Task 1.
+  - ZIPFoundation dependency → Task 2.
+  - Testing → Tasks 3, 4, 5, 6, 7 (unit) and Task 12 (manual end-to-end).
+  - Settings tab addition → Task 10.
+
+- **Known assumption flagged for implementation:** GDPR JSON schema. Task 12 is the verification gate. DTO and its tests are written to be easy to amend.
+
+- **Type consistency:** `HistoryImporter` public API (`importHistory(from:)`, `cancel()`, `@Observable` counters) is the same in every task that references it.
