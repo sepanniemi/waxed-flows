@@ -85,4 +85,53 @@ final class HistoryImporterTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(all.count, 100)  // at least one batch persisted
         XCTAssertLessThan(all.count, 250)            // but not all
     }
+
+    func test_import_invalidZip_throwsInvalidArchive() async throws {
+        let bogus = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bogus-\(UUID().uuidString).zip")
+        try Data("not a zip".utf8).write(to: bogus)
+        defer { try? FileManager.default.removeItem(at: bogus) }
+
+        let importer = HistoryImporter(context: context)
+        do {
+            try await importer.importHistory(from: bogus)
+            XCTFail("expected throw")
+        } catch ImportError.invalidArchive {
+            // expected
+        }
+    }
+
+    func test_import_zipWithNoSessionFiles_throwsWrongFormat() async throws {
+        let zipURL = try ZipFixture.make([
+            "readme.txt": Data("hello".utf8),
+            "physical-information.json": Data("{}".utf8),
+        ])
+        defer { try? FileManager.default.removeItem(at: zipURL.deletingLastPathComponent()) }
+
+        let importer = HistoryImporter(context: context)
+        do {
+            try await importer.importHistory(from: zipURL)
+            XCTFail("expected throw")
+        } catch ImportError.wrongFormat {
+            // expected
+        }
+    }
+
+    func test_import_malformedSessionCountedAsFailed_restContinue() async throws {
+        let zipURL = try ZipFixture.make([
+            "training-session-2025-01-15-aaa.json":
+                ZipFixture.session(startTime: "2025-01-15T09:00:00.000"),
+            "training-session-2025-01-16-bbb.json":
+                Data("{ not valid json".utf8),
+            "training-session-2025-02-10-ccc.json":
+                ZipFixture.session(startTime: "2025-02-10T07:30:00.000"),
+        ])
+        defer { try? FileManager.default.removeItem(at: zipURL.deletingLastPathComponent()) }
+
+        let importer = HistoryImporter(context: context)
+        try await importer.importHistory(from: zipURL)
+
+        XCTAssertEqual(importer.imported, 2)
+        XCTAssertEqual(importer.failed, 1)
+    }
 }
