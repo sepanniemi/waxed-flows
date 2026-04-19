@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 import ZIPFoundation
 
+@MainActor
 @Observable
 final class HistoryImporter {
     var total: Int = 0
@@ -30,7 +31,9 @@ final class HistoryImporter {
         defer { try? FileManager.default.removeItem(at: workDir) }
 
         do {
-            try FileManager.default.unzipItem(at: zipURL, to: workDir)
+            try await Task.detached(priority: .utility) {
+                try FileManager.default.unzipItem(at: zipURL, to: workDir)
+            }.value
         } catch {
             throw ImportError.invalidArchive
         }
@@ -47,12 +50,15 @@ final class HistoryImporter {
         }()
         var seenMinutes = existingMinutes
 
+        let decoder = JSONDecoder()
         for fileURL in sessionFiles {
             defer { processed += 1 }
             guard !cancelRequested else { throw ImportError.cancelled }
             do {
-                let data = try Data(contentsOf: fileURL)
-                let session = try JSONDecoder().decode(GDPRTrainingSession.self, from: data)
+                let data: Data = try await Task.detached(priority: .utility) {
+                    try Data(contentsOf: fileURL)
+                }.value
+                let session = try decoder.decode(GDPRTrainingSession.self, from: data)
                 let fileID = fileURL.deletingPathExtension().lastPathComponent
                 guard let activity = session.toActivity(fileID: fileID) else {
                     failed += 1
@@ -83,7 +89,13 @@ final class HistoryImporter {
         let enumerator = FileManager.default.enumerator(
             at: dir,
             includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
+            options: [.skipsHiddenFiles],
+            errorHandler: { url, error in
+                #if DEBUG
+                print("[HistoryImporter] enumeration error at \(url): \(error)")
+                #endif
+                return true
+            }
         )
         var results: [URL] = []
         while let url = enumerator?.nextObject() as? URL {

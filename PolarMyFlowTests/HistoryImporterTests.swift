@@ -2,6 +2,7 @@ import XCTest
 import SwiftData
 @testable import PolarMyFlow
 
+@MainActor
 final class HistoryImporterTests: XCTestCase {
     var context: ModelContext!
     var repo: ActivityRepository!
