@@ -5,6 +5,11 @@ options:
     iOS: "17.0"
   swift: "5.9"
 
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation
+    from: 0.9.19
+
 targets:
   PolarMyFlow:
     type: application
@@ -30,6 +35,7 @@ targets:
       - sdk: SwiftData.framework
       - sdk: AuthenticationServices.framework
       - sdk: Security.framework
+      - package: ZIPFoundation
 
   PolarMyFlowTests:
     type: bundle.unit-test
@@ -43,3 +49,4 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: PolarMyFlow
+      - package: ZIPFoundation
