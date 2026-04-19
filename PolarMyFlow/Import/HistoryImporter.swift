@@ -39,6 +39,14 @@ final class HistoryImporter {
         guard !sessionFiles.isEmpty else { throw ImportError.wrongFormat }
 
         total = sessionFiles.count
+
+        let existingMinutes: Set<Date> = try {
+            let descriptor = FetchDescriptor<Activity>()
+            let all = try context.fetch(descriptor)
+            return Set(all.map { Self.minuteBucket($0.startTime) })
+        }()
+        var seenMinutes = existingMinutes
+
         for fileURL in sessionFiles {
             defer { processed += 1 }
             guard !cancelRequested else { throw ImportError.cancelled }
@@ -50,6 +58,12 @@ final class HistoryImporter {
                     failed += 1
                     continue
                 }
+                let bucket = Self.minuteBucket(activity.startTime)
+                if seenMinutes.contains(bucket) {
+                    skipped += 1
+                    continue
+                }
+                seenMinutes.insert(bucket)
                 context.insert(activity)
                 imported += 1
             } catch {
@@ -57,6 +71,12 @@ final class HistoryImporter {
             }
         }
         try context.save()
+    }
+
+    static func minuteBucket(_ date: Date) -> Date {
+        let cal = Calendar(identifier: .gregorian)
+        let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        return cal.date(from: comps) ?? date
     }
 
     private func enumerateSessionFiles(in dir: URL) throws -> [URL] {
