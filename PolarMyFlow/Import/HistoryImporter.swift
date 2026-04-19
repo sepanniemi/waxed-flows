@@ -13,6 +13,11 @@ final class HistoryImporter {
     var isRunning: Bool = false
     var cancelRequested: Bool = false
 
+    // Test-only: trigger cancellation after N imported activities. Ignored when nil.
+    var cancelAfter: Int?
+
+    private static let batchSize = 100
+
     private let context: ModelContext
 
     init(context: ModelContext) {
@@ -51,9 +56,11 @@ final class HistoryImporter {
         var seenMinutes = existingMinutes
 
         let decoder = JSONDecoder()
+        var batchCount = 0
         for fileURL in sessionFiles {
             defer { processed += 1 }
-            guard !cancelRequested else { throw ImportError.cancelled }
+            if cancelRequested { break }
+
             do {
                 let data: Data = try await Task.detached(priority: .utility) {
                     try Data(contentsOf: fileURL)
@@ -72,11 +79,22 @@ final class HistoryImporter {
                 seenMinutes.insert(bucket)
                 context.insert(activity)
                 imported += 1
+                batchCount += 1
+
+                if batchCount >= Self.batchSize {
+                    try context.save()
+                    batchCount = 0
+                }
+
+                if let limit = cancelAfter, imported >= limit {
+                    cancelRequested = true
+                }
             } catch {
                 failed += 1
             }
         }
         try context.save()
+        if cancelRequested { throw ImportError.cancelled }
     }
 
     static func minuteBucket(_ date: Date) -> Date {

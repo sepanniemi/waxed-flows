@@ -56,4 +56,33 @@ final class HistoryImporterTests: XCTestCase {
         XCTAssertEqual(importer.imported, 1)
         XCTAssertEqual(importer.skipped, 1)
     }
+
+    func test_import_cancelMidStream_commitsPartialProgress() async throws {
+        // Build a zip with 250 sessions so we're guaranteed to cross a batch boundary.
+        var entries: [String: Data] = [:]
+        for i in 0..<250 {
+            let minute = String(format: "%02d", i % 60)
+            let hour = String(format: "%02d", (i / 60) % 24)
+            let day = String(format: "%02d", max(1, (i / (60*24)) + 1))
+            let start = "2025-06-\(day)T\(hour):\(minute):00.000"
+            entries["training-session-2025-06-\(day)-\(i).json"] =
+                ZipFixture.session(startTime: start)
+        }
+        let zipURL = try ZipFixture.make(entries)
+        defer { try? FileManager.default.removeItem(at: zipURL.deletingLastPathComponent()) }
+
+        let importer = HistoryImporter(context: context)
+        importer.cancelAfter = 100   // test-only hook
+
+        do {
+            try await importer.importHistory(from: zipURL)
+            XCTFail("expected cancellation to throw")
+        } catch ImportError.cancelled {
+            // expected
+        }
+
+        let all = try repo.fetchAll()
+        XCTAssertGreaterThanOrEqual(all.count, 100)  // at least one batch persisted
+        XCTAssertLessThan(all.count, 250)            // but not all
+    }
 }
