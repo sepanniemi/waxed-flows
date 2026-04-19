@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var showFileImporter = false
     @State private var errorMessage: String?
     @State private var completionMessage: String?
+    @AppStorage("com.personal.polarmyflow.importYearsBack") private var storedYearsBack: Int = 4
 
     var body: some View {
         NavigationStack {
@@ -21,6 +22,13 @@ struct SettingsView: View {
                         Label("Request data export from Polar",
                               systemImage: "arrow.down.doc")
                     }
+                    Picker("Import window", selection: $storedYearsBack) {
+                        Text("Last 2 years").tag(2)
+                        Text("Last 4 years").tag(4)
+                        Text("All time").tag(-1)
+                    }
+                    .pickerStyle(.menu)
+                    .disabled(importer?.isRunning == true)
                     Button {
                         showFileImporter = true
                     } label: {
@@ -56,7 +64,7 @@ struct SettingsView: View {
             .alert("Export requested", isPresented: $showExportInstructions) {
                 Button("Got it", role: .cancel) {}
             } message: {
-                Text("Polar will email you a download link within a few hours to a few days. When it arrives, tap the link and choose PolarMyFlow to share the ZIP into the app.")
+                Text("Polar will email you a download link within a few hours to a few days. When it arrives, tap the link and choose PolarMyFlow to share the ZIP into the app. By default PolarMyFlow only imports the last 4 years — change Import window above if you want more or fewer years.")
             }
             .onReceive(NotificationCenter.default.publisher(for: .importZipReceived)) { note in
                 guard let url = note.object as? URL else { return }
@@ -93,7 +101,8 @@ struct SettingsView: View {
         let imp = HistoryImporter(context: ModelContext(modelContext.container))
         importer = imp
         do {
-            try await imp.importHistory(from: url)
+            let years: Int? = storedYearsBack >= 0 ? storedYearsBack : nil
+            try await imp.importHistory(from: url, yearsBack: years)
             completionMessage = "Imported \(imp.imported) activities. "
                 + "\(imp.skipped) duplicates skipped, \(imp.failed) files couldn't be read."
         } catch ImportError.cancelled {
