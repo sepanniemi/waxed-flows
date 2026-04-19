@@ -31,6 +31,12 @@ targets:
               - polarflow
             CFBundleURLName: com.personal.polarmyflow
         UILaunchStoryboardName: ""
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Polar Data Export
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.zip-archive
     dependencies:
       - sdk: SwiftData.framework
       - sdk: AuthenticationServices.framework
