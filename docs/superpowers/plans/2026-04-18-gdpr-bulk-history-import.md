@@ -20,7 +20,7 @@
   ```bash
   xcodegen generate
   xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow \
-    -destination 'platform=iOS Simulator,name=iPhone 15' build test
+    -destination 'platform=iOS Simulator,name=iPhone 17' build test
   ```
 
 ---
@@ -63,7 +63,7 @@ Expected: completes without errors. The new `.xcodeproj` no longer references th
 
 Run:
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' build test
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' build test
 ```
 Expected: build succeeds, all remaining tests pass.
 
@@ -134,7 +134,7 @@ enum _ZIPCheck {
 Then regenerate and build:
 ```bash
 xcodegen generate
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' build
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 Expected: build succeeds. If the import fails, re-check `project.yml`.
 
@@ -276,7 +276,7 @@ Add this file to the `PolarMyFlowTests` target in Xcode.
 - [ ] **Step 2: Run tests — verify they fail**
 
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/GDPRTrainingSessionTests
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' test -only-testing:PolarMyFlowTests/GDPRTrainingSessionTests
 ```
 Expected: compile failure — `GDPRTrainingSession` is undefined.
 
@@ -403,7 +403,7 @@ Then run `xcodegen generate` to pick up the new file.
 - [ ] **Step 5: Run tests — verify they pass**
 
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/GDPRTrainingSessionTests
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' test -only-testing:PolarMyFlowTests/GDPRTrainingSessionTests
 ```
 Expected: all four tests pass.
 
@@ -528,7 +528,7 @@ Then run `xcodegen generate` to pick up the new file.
 - [ ] **Step 3: Run the test — verify it fails**
 
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/HistoryImporterTests/test_import_validZip_insertsActivities
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' test -only-testing:PolarMyFlowTests/HistoryImporterTests/test_import_validZip_insertsActivities
 ```
 Expected: compile failure — `HistoryImporter` undefined.
 
@@ -675,7 +675,7 @@ func test_import_skipsActivityIfMinutePrecisionStartTimeExists() async throws {
 - [ ] **Step 2: Run it — verify it fails**
 
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/HistoryImporterTests/test_import_skipsActivityIfMinutePrecisionStartTimeExists
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' test -only-testing:PolarMyFlowTests/HistoryImporterTests/test_import_skipsActivityIfMinutePrecisionStartTimeExists
 ```
 Expected: fail — `all.count == 3`, `imported == 2`, `skipped == 0`.
 
@@ -718,7 +718,7 @@ static func minuteBucket(_ date: Date) -> Date {
 - [ ] **Step 4: Run all importer tests — verify they pass**
 
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/HistoryImporterTests
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' test -only-testing:PolarMyFlowTests/HistoryImporterTests
 ```
 Expected: both tests pass.
 
@@ -780,7 +780,7 @@ func test_import_cancelMidStream_commitsPartialProgress() async throws {
 - [ ] **Step 2: Run it — verify it fails**
 
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/HistoryImporterTests/test_import_cancelMidStream_commitsPartialProgress
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' test -only-testing:PolarMyFlowTests/HistoryImporterTests/test_import_cancelMidStream_commitsPartialProgress
 ```
 Expected: fail — `cancelAfter` property undefined.
 
@@ -840,14 +840,14 @@ if cancelRequested { throw ImportError.cancelled }
 - [ ] **Step 4: Run the new test — verify it passes**
 
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/HistoryImporterTests/test_import_cancelMidStream_commitsPartialProgress
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' test -only-testing:PolarMyFlowTests/HistoryImporterTests/test_import_cancelMidStream_commitsPartialProgress
 ```
 Expected: test passes.
 
 - [ ] **Step 5: Re-run full importer suite**
 
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/HistoryImporterTests
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' test -only-testing:PolarMyFlowTests/HistoryImporterTests
 ```
 Expected: all importer tests pass.
 
@@ -928,7 +928,7 @@ func test_import_malformedSessionCountedAsFailed_restContinue() async throws {
 - [ ] **Step 2: Run tests — verify they pass**
 
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test -only-testing:PolarMyFlowTests/HistoryImporterTests
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' test -only-testing:PolarMyFlowTests/HistoryImporterTests
 ```
 Expected: all three new tests pass — the implementation from Task 4–6 already throws `invalidArchive`, `wrongFormat`, and counts failures. If any fails, fix `HistoryImporter` before moving on.
 
@@ -974,7 +974,7 @@ Expected: regeneration succeeds; the grep shows the new entry.
 - [ ] **Step 3: Build**
 
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' build
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 Expected: build succeeds.
 
@@ -1048,7 +1048,7 @@ Then run `xcodegen generate` to pick up the new file.
 - [ ] **Step 2: Build**
 
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' build
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 Expected: build succeeds.
 
@@ -1191,7 +1191,7 @@ SettingsView()
 - [ ] **Step 3: Build and run in simulator, manual smoke test**
 
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' build
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 
 Then run the app. Tap Settings tab → confirm both buttons visible → tap "Import from file…" → confirm file picker opens and filters to `.zip`.
@@ -1267,7 +1267,7 @@ In `SettingsView`, add before `.fileImporter(...)`:
 - [ ] **Step 5: Build and manual smoke test**
 
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' build
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 
 Run in simulator. From Safari inside the simulator, download any zip, tap Share → PolarMyFlow → confirm the app opens to Settings and begins import (pick a real GDPR export zip if available; otherwise expect the `wrongFormat` toast).
@@ -1275,7 +1275,7 @@ Run in simulator. From Safari inside the simulator, download any zip, tap Share 
 - [ ] **Step 6: Run the full test suite**
 
 ```bash
-xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 15' test
+xcodebuild -project PolarMyFlow.xcodeproj -scheme PolarMyFlow -destination 'platform=iOS Simulator,name=iPhone 17' test
 ```
 Expected: all tests pass.
 
