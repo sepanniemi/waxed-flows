@@ -1,11 +1,16 @@
 import SwiftUI
 import SwiftData
 
+extension Notification.Name {
+    static let importZipReceived = Notification.Name("polarmyflow.importZipReceived")
+}
+
 @main
 struct PolarMyFlowApp: App {
     @State private var authManager = AuthManager()
     @State private var syncMessage: String?
     @State private var isSyncing = false
+    @State private var inboundZipURL: URL?
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([Activity.self, SyncState.self])
@@ -29,6 +34,15 @@ struct PolarMyFlowApp: App {
                 .onChange(of: authManager.isAuthenticated) { _, isAuthenticated in
                     guard isAuthenticated else { return }
                     Task { await startSyncIfAuthenticated() }
+                }
+                .onOpenURL { url in
+                    guard url.pathExtension.lowercased() == "zip" else { return }
+                    inboundZipURL = url
+                }
+                .onChange(of: inboundZipURL) { _, url in
+                    guard let url else { return }
+                    NotificationCenter.default.post(name: .importZipReceived, object: url)
+                    inboundZipURL = nil
                 }
                 #if DEBUG
                 .onReceive(NotificationCenter.default.publisher(for: .debugResetSync)) { _ in

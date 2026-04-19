@@ -58,6 +58,10 @@ struct SettingsView: View {
             } message: {
                 Text("Polar will email you a download link within a few hours to a few days. When it arrives, tap the link and choose PolarMyFlow to share the ZIP into the app.")
             }
+            .onReceive(NotificationCenter.default.publisher(for: .importZipReceived)) { note in
+                guard let url = note.object as? URL else { return }
+                Task { await runImport(url: url) }
+            }
             .fileImporter(
                 isPresented: $showFileImporter,
                 allowedContentTypes: [.zip]
