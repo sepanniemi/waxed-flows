@@ -49,9 +49,9 @@ struct SportRowView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(formatDistance(summary.totalDistance))
+                Text(ActivityFormatting.distanceKm(summary.totalDistance))
                     .font(.subheadline.weight(.semibold))
-                Text(formatPace(summary.avgPace))
+                Text(ActivityFormatting.paceMinPerKm(summary.avgPace))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -59,19 +59,5 @@ struct SportRowView: View {
         .padding(.horizontal)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
-    }
-
-    private func formatDistance(_ metres: Double) -> String {
-        let km = metres / 1000
-        return String(format: "%.1f km", km)
-    }
-
-    // pace in s/m → format as min:ss /km
-    private func formatPace(_ pace: Double) -> String {
-        guard pace > 0 else { return "—" }
-        let secPerKm = pace * 1000
-        let min = Int(secPerKm) / 60
-        let sec = Int(secPerKm) % 60
-        return String(format: "%d:%02d /km", min, sec)
     }
 }

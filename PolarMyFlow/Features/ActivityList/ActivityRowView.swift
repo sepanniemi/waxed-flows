@@ -21,7 +21,7 @@ struct ActivityRowView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(String(format: "%.1f km", activity.distance / 1000))
+                Text(ActivityFormatting.distanceKm(activity.distance))
                     .font(.subheadline.weight(.semibold))
                 if let hr = activity.avgHeartRate {
                     Text("\(hr) bpm")

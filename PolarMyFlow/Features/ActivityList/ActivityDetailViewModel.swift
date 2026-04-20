@@ -16,23 +16,14 @@ final class ActivityDetailViewModel {
         activity.startTime.formatted(date: .long, time: .shortened)
     }
 
-    var durationString: String {
-        let h = Int(activity.duration) / 3600
-        let m = (Int(activity.duration) % 3600) / 60
-        let s = Int(activity.duration) % 60
-        if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
-        return String(format: "%d:%02d", m, s)
-    }
+    var durationString: String { ActivityFormatting.duration(activity.duration) }
 
     var distanceString: String {
-        String(format: "%.2f km", activity.distance / 1000)
+        ActivityFormatting.distanceKm(activity.distance, precision: 2)
     }
 
     var paceString: String {
-        let secPerKm = activity.avgPace * 1000
-        let min = Int(secPerKm) / 60
-        let sec = Int(secPerKm) % 60
-        return String(format: "%d:%02d /km", min, sec)
+        ActivityFormatting.paceMinPerKm(activity.avgPace)
     }
 
     var avgHRString: String? {

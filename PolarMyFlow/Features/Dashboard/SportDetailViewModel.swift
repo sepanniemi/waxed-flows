@@ -19,8 +19,7 @@ final class SportDetailViewModel {
     }
 
     var totalDistance: String {
-        let km = activities.reduce(0) { $0 + $1.distance } / 1000
-        return String(format: "%.1f km", km)
+        ActivityFormatting.distanceKm(activities.reduce(0) { $0 + $1.distance })
     }
 
     var sessionCount: String { "\(activities.count) sessions" }
