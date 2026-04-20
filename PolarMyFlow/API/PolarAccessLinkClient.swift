@@ -2,7 +2,7 @@ import Foundation
 
 final class PolarAccessLinkClient {
     private let session: URLSession
-    private var accessToken: String
+    private let accessToken: String
     private static let baseURL = "https://www.polaraccesslink.com"
 
     init(session: URLSession = .shared, accessToken: String) {
@@ -13,68 +13,16 @@ final class PolarAccessLinkClient {
     // Register user with AccessLink. Returns polar-user-id as String.
     // 409 = already registered — not an error, just means we're good.
     func registerUser() async throws -> String {
-        let url = URL(string: "\(Self.baseURL)/v3/users")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        var request = makeRequest(path: "/v3/users", method: "POST")
         request.setValue("application/xml", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = Self.registerBody.data(using: .utf8)
 
-        let xml = """
-        <?xml version="1.0" encoding="UTF-8" ?>
-        <register>
-          <member-id>polarmyflow-user</member-id>
-        </register>
-        """
-        request.httpBody = xml.data(using: .utf8)
-
-        let (data, response) = try await session.data(for: request)
-        let http = response as! HTTPURLResponse
-
-        #if DEBUG
-        print("📡 Register user: HTTP \(http.statusCode)")
-        if let body = String(data: data, encoding: .utf8) { print("📡 Response: \(body)") }
-        #endif
-
-        if http.statusCode == 409 {
-            // Already registered — that's fine
-            return "registered"
-        }
-        guard http.statusCode == 200 || http.statusCode == 201 else {
-            throw APIError.httpError(statusCode: http.statusCode)
-        }
-        return try parseUserID(from: data)
-    }
-
-    // Fetch exercises from AccessLink (last 30 days of data uploaded to Flow).
-    // Simple GET — no transaction model needed.
-    func pullNewActivities() async throws -> [Activity] {
-        let url = URL(string: "\(Self.baseURL)/v3/exercises")!
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let (data, response) = try await session.data(for: request)
-        let http = response as! HTTPURLResponse
-
-        #if DEBUG
-        print("📡 GET /v3/exercises: HTTP \(http.statusCode)")
-        if let body = String(data: data, encoding: .utf8) {
-            print("📡 Response (\(data.count) bytes): \(body.prefix(500))")
-        }
-        #endif
-
-        if http.statusCode == 204 { return [] }
-        guard http.statusCode == 200 else {
-            throw APIError.httpError(statusCode: http.statusCode)
+        let (data, status) = try await perform(request, label: "register user")
+        if status == 409 { return "registered" }
+        guard status == 200 || status == 201 else {
+            throw APIError.httpError(statusCode: status)
         }
 
-        return try parseExercises(from: data)
-    }
-
-    // MARK: - Parsing
-
-    private func parseUserID(from data: Data) throws -> String {
         struct UserResponse: Decodable {
             let polarUserID: Int
             enum CodingKeys: String, CodingKey { case polarUserID = "polar-user-id" }
@@ -85,82 +33,45 @@ final class PolarAccessLinkClient {
         return "\(r.polarUserID)"
     }
 
-    private func parseExercises(from data: Data) throws -> [Activity] {
-        struct HeartRate: Decodable {
-            let average: Int?
-            let maximum: Int?
-        }
-        struct Exercise: Decodable {
-            let id: String
-            let start_time: String           // "2008-10-13T10:40:02"
-            let duration: String             // "PT2H44M"
-            let calories: Int?
-            let distance: Double?
-            let heart_rate: HeartRate?
-            let sport: String?
-            let has_route: Bool?
-            let detailed_sport_info: String?
-        }
+    // Fetch exercises from AccessLink (last 30 days of data uploaded to Flow).
+    func pullNewActivities() async throws -> [Activity] {
+        let request = makeRequest(path: "/v3/exercises", method: "GET")
+        let (data, status) = try await perform(request, label: "GET /v3/exercises")
+        if status == 204 { return [] }
+        guard status == 200 else { throw APIError.httpError(statusCode: status) }
 
-        guard let exercises = try? JSONDecoder().decode([Exercise].self, from: data) else {
-            #if DEBUG
-            print("📡 Failed to decode exercises JSON")
-            #endif
+        guard let exercises = try? JSONDecoder().decode([AccessLinkExercise].self, from: data) else {
             throw APIError.decodingFailed
         }
-
-        #if DEBUG
-        print("📡 Parsed \(exercises.count) exercises")
-        #endif
-
-        return exercises.compactMap { e in
-            guard let dur = Self.parseISO8601Duration(e.duration) else {
-                #if DEBUG
-                print("📡 Skipping exercise \(e.id): bad duration '\(e.duration)'")
-                #endif
-                return nil
-            }
-
-            let startTime: Date
-            let localFormatter = DateFormatter()
-            localFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-            localFormatter.locale = Locale(identifier: "en_US_POSIX")
-            if let date = localFormatter.date(from: e.start_time) {
-                startTime = date
-            } else {
-                let isoFormatter = ISO8601DateFormatter()
-                isoFormatter.formatOptions = [.withInternetDateTime]
-                guard let date = isoFormatter.date(from: e.start_time) else {
-                    #if DEBUG
-                    print("📡 Skipping exercise \(e.id): bad start_time '\(e.start_time)'")
-                    #endif
-                    return nil
-                }
-                startTime = date
-            }
-
-            let dist = e.distance ?? 0.0
-            let speed = dist > 0 ? dist / dur : 0.0
-            let pace  = dist > 0 ? dur / dist : 0.0
-
-            // Use detailed_sport_info if available, fall back to sport
-            let sportStr = e.detailed_sport_info ?? e.sport ?? SportType.other.rawValue
-
-            return Activity(
-                id: e.id,
-                startTime: startTime,
-                duration: dur,
-                distance: dist,
-                sportRawValue: sportStr,
-                avgSpeed: speed,
-                avgPace: pace,
-                avgHeartRate: e.heart_rate?.average,
-                maxHeartRate: e.heart_rate?.maximum,
-                calories: e.calories,
-                hasRoute: e.has_route ?? false
-            )
-        }
+        return exercises.compactMap { $0.toActivity() }
     }
+
+    // MARK: - Private
+
+    private func makeRequest(path: String, method: String) -> URLRequest {
+        var request = URLRequest(url: URL(string: "\(Self.baseURL)\(path)")!)
+        request.httpMethod = method
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        return request
+    }
+
+    private func perform(_ request: URLRequest, label: String) async throws -> (Data, Int) {
+        let (data, response) = try await session.data(for: request)
+        let http = response as! HTTPURLResponse
+        #if DEBUG
+        let preview = String(data: data, encoding: .utf8)?.prefix(500) ?? ""
+        print("📡 \(label): HTTP \(http.statusCode), \(data.count) bytes — \(preview)")
+        #endif
+        return (data, http.statusCode)
+    }
+
+    private static let registerBody = """
+    <?xml version="1.0" encoding="UTF-8" ?>
+    <register>
+      <member-id>polarmyflow-user</member-id>
+    </register>
+    """
 
     // Internal for testing
     static func parseISO8601Duration(_ string: String) -> TimeInterval? {
@@ -175,6 +86,68 @@ final class PolarAccessLinkClient {
             }
         }
         return total > 0 ? total : nil
+    }
+}
+
+// MARK: - DTO
+
+// Mirrors AccessLink's /v3/exercises shape. Kept as its own file-private
+// type so the client stays focused on HTTP and the mapping lives with the
+// data — same pattern as GDPRTrainingSession.
+private struct AccessLinkExercise: Decodable {
+    let id: String
+    let start_time: String           // "2008-10-13T10:40:02" (naive local)
+    let duration: String             // ISO-8601 duration e.g. "PT2H44M"
+    let calories: Int?
+    let distance: Double?
+    let heart_rate: HeartRate?
+    let sport: String?
+    let has_route: Bool?
+    let detailed_sport_info: String?
+
+    struct HeartRate: Decodable {
+        let average: Int?
+        let maximum: Int?
+    }
+
+    func toActivity() -> Activity? {
+        guard let dur = PolarAccessLinkClient.parseISO8601Duration(duration),
+              let start = Self.parseDate(start_time) else { return nil }
+
+        let dist = distance ?? 0
+        let sportStr = detailed_sport_info ?? sport ?? SportType.other.rawValue
+
+        return Activity(
+            id: id,
+            startTime: start,
+            duration: dur,
+            distance: dist,
+            sportRawValue: sportStr,
+            avgSpeed: dist > 0 ? dist / dur : 0,
+            avgPace:  dist > 0 ? dur / dist : 0,
+            avgHeartRate: heart_rate?.average,
+            maxHeartRate: heart_rate?.maximum,
+            calories: calories,
+            hasRoute: has_route ?? false
+        )
+    }
+
+    // AccessLink returns naive local strings ("2008-10-13T10:40:02"), but
+    // occasionally an ISO-8601 offset. Parse the naive form as device-local
+    // (same policy as GDPR import), fall back to ISO-8601.
+    private static let naiveFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+    static func parseDate(_ s: String) -> Date? {
+        naiveFormatter.date(from: s) ?? isoFormatter.date(from: s)
     }
 }
 
