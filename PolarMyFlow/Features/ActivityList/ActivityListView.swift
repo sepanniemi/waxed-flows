@@ -40,15 +40,19 @@ struct ActivityListView: View {
                             }
                         }
                     }
-                    .navigationTitle("Activities")
                 }
             }
-            .task {
+            .navigationTitle("Activities")
+        }
+        .task {
+            if viewModel == nil {
                 let repo = ActivityRepository(context: modelContext)
-                let vm = ActivityListViewModel(repository: repo)
-                viewModel = vm
-                await vm.load()
+                viewModel = ActivityListViewModel(repository: repo)
             }
+            await viewModel?.load()
+        }
+        .onAppear {
+            Task { await viewModel?.load() }
         }
     }
 }
