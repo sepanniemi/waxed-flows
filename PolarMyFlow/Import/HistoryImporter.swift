@@ -50,12 +50,12 @@ final class HistoryImporter {
         guard !matching.isEmpty else { throw ImportError.wrongFormat }
         total = matching.count
 
-        let existingMinutes: Set<Date> = try {
-            let descriptor = FetchDescriptor<Activity>()
+        var seenMinutes: Set<Date> = try {
+            var descriptor = FetchDescriptor<Activity>()
+            descriptor.propertiesToFetch = [\.startTime]
             let all = try context.fetch(descriptor)
             return Set(all.map { Self.minuteBucket($0.startTime) })
         }()
-        var seenMinutes = existingMinutes
 
         let decoder = JSONDecoder()
         var batchCount = 0
@@ -63,39 +63,51 @@ final class HistoryImporter {
             defer { processed += 1 }
             if cancelRequested { break }
 
+            let activity: Activity
             do {
-                let data: Data = try await Self.extractEntry(entry, from: archive)
+                let data = try await Self.extractEntry(entry, from: archive)
                 let session = try decoder.decode(GDPRTrainingSession.self, from: data)
                 let fileID = (entry.path as NSString).lastPathComponent
                     .replacingOccurrences(of: ".json", with: "")
-                guard let activity = session.toActivity(fileID: fileID) else {
-                    failed += 1
-                    continue
+                guard let a = session.toActivity(fileID: fileID) else {
+                    failed += 1; continue
                 }
-                let bucket = Self.minuteBucket(activity.startTime)
-                if seenMinutes.contains(bucket) {
-                    skipped += 1
-                    continue
-                }
-                seenMinutes.insert(bucket)
-                context.insert(activity)
-                imported += 1
-                batchCount += 1
-
-                if batchCount >= Self.batchSize {
-                    try context.save()
-                    batchCount = 0
-                }
-
-                if let limit = cancelAfter, imported >= limit {
-                    cancelRequested = true
-                }
+                activity = a
             } catch {
-                failed += 1
+                failed += 1; continue
+            }
+
+            let bucket = Self.minuteBucket(activity.startTime)
+            if seenMinutes.contains(bucket) {
+                skipped += 1; continue
+            }
+            seenMinutes.insert(bucket)
+            context.insert(activity)
+            imported += 1
+            batchCount += 1
+
+            if batchCount >= Self.batchSize {
+                try saveBatch(batchCount: &batchCount)
+            }
+            if let limit = cancelAfter, imported >= limit {
+                cancelRequested = true
             }
         }
-        try context.save()
+        try saveBatch(batchCount: &batchCount)
         if cancelRequested { throw ImportError.cancelled }
+    }
+
+    // Save pending inserts; on failure, reconcile the imported counter so
+    // it reflects what actually landed on disk.
+    private func saveBatch(batchCount: inout Int) throws {
+        do {
+            try context.save()
+            batchCount = 0
+        } catch {
+            imported -= batchCount
+            batchCount = 0
+            throw ImportError.ioFailure(error)
+        }
     }
 
     // Extract a single entry off-main. Returns the decompressed bytes.

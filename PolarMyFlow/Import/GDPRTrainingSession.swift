@@ -50,8 +50,11 @@ struct GDPRTrainingSession: Decodable {
         )
     }
 
-    // Polar GDPR export uses local-time strings like "2025-01-15T09:00:00.000"
-    // (no timezone offset). Parse as POSIX local time.
+    // Polar GDPR export uses naive local-time strings like
+    // "2025-01-15T09:00:00.000" with no timezone offset. We interpret the
+    // wall clock in the device's current timezone — same policy AccessLink
+    // uses — so a session shows the same time the user sees in Polar Flow.
+    // DateFormatter defaults to the system TZ when timeZone is unset.
     static func parseDate(_ string: String) -> Date? {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
