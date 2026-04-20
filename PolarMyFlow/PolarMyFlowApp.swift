@@ -93,12 +93,8 @@ struct PolarMyFlowApp: App {
         let coordinator = SyncCoordinator(repository: repo, accessLinkClient: accessLinkClient)
 
         do {
-            let progress = try await coordinator.sync(userID: userID)
-            if progress.imported > 0 {
-                syncMessage = "Imported \(progress.imported) new activities"
-            } else {
-                syncMessage = nil
-            }
+            let imported = try await coordinator.sync(userID: userID)
+            syncMessage = imported > 0 ? "Imported \(imported) new activities" : nil
         } catch {
             syncMessage = "Sync failed: \(error.localizedDescription)"
         }

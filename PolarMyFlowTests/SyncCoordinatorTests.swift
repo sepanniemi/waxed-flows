@@ -18,9 +18,9 @@ final class SyncCoordinatorTests: XCTestCase {
     func test_sync_savesReturnedActivities() async throws {
         mockAccessLink.stubbedActivities = [makeActivity(id: "a1"), makeActivity(id: "a2")]
 
-        let progress = try await coordinator.sync(userID: "user-1")
+        let imported = try await coordinator.sync(userID: "user-1")
 
-        XCTAssertEqual(progress.imported, 2)
+        XCTAssertEqual(imported, 2)
         let all = try repo.fetchAll()
         XCTAssertEqual(all.count, 2)
     }
@@ -28,10 +28,9 @@ final class SyncCoordinatorTests: XCTestCase {
     func test_sync_emptyResponse_importsZero() async throws {
         mockAccessLink.stubbedActivities = []
 
-        let progress = try await coordinator.sync(userID: "user-1")
+        let imported = try await coordinator.sync(userID: "user-1")
 
-        XCTAssertEqual(progress.imported, 0)
-        XCTAssertTrue(progress.errors.isEmpty)
+        XCTAssertEqual(imported, 0)
     }
 
     func test_sync_deduplication_doesNotDoubleCount() async throws {
@@ -54,18 +53,28 @@ final class SyncCoordinatorTests: XCTestCase {
         XCTAssertNotNil(state.lastSyncedAt)
         XCTAssertGreaterThanOrEqual(state.lastSyncedAt!, before)
     }
+
+    func test_sync_propagatesAccessLinkErrors() async throws {
+        mockAccessLink.pullError = NSError(domain: "test", code: 1)
+
+        do {
+            _ = try await coordinator.sync(userID: "user-1")
+            XCTFail("expected sync to throw")
+        } catch {
+            // expected
+        }
+    }
 }
 
 // MARK: - Mock
 
 class MockAccessLinkClient: AccessLinkClientProtocol {
-    var registerCalled = false
-    var stubbedUserID = "user-1"
     var stubbedActivities: [Activity] = []
+    var pullError: Error?
 
-    func registerUser() async throws -> String {
-        registerCalled = true
-        return stubbedUserID
+    func registerUser() async throws -> String { "user-1" }
+    func pullNewActivities() async throws -> [Activity] {
+        if let e = pullError { throw e }
+        return stubbedActivities
     }
-    func pullNewActivities() async throws -> [Activity] { stubbedActivities }
 }
