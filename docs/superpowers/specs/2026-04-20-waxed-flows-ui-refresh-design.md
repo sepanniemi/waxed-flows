@@ -81,7 +81,7 @@ Anton is added as a single `.ttf` in `PolarMyFlow/Resources/Fonts/Anton-Regular.
 
 **Two tracks carving** — `icon-tracks`.
 
-Two parallel white-to-sky-blue gradient strokes on the Polaris background, angled ~12° counter-clockwise, occupying ~84% of the icon height. Same radial glow in the top-right. No wordmark, no text.
+Two parallel white-to-sky-blue gradient strokes on the Polaris background, angled ~12° counter-clockwise, occupying ~74% of the icon height. Same radial glow in the top-right. Hallow moon glacing over (top-right). No wordmark, no text.
 
 Rendered at every required iOS size from a single 1024×1024 source. `AppIcon.appiconset` added to `Assets.xcassets` (which does not currently exist — see Implementation Notes).
 
