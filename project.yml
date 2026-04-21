@@ -17,6 +17,11 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - PolarMyFlow
+    resources:
+      - path: PolarMyFlow/Resources
+        buildPhase:
+          copyFiles:
+            destination: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.personal.polarmyflow
@@ -26,10 +31,13 @@ targets:
     info:
       path: PolarMyFlow/Info.plist
       properties:
+        CFBundleDisplayName: Waxed Flows
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               - polarflow
             CFBundleURLName: com.personal.polarmyflow
+        UIAppFonts:
+          - Anton-Regular.ttf
         UILaunchStoryboardName: ""
         CFBundleDocumentTypes:
           - CFBundleTypeName: Polar Data Export
