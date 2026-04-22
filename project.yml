@@ -18,10 +18,7 @@ targets:
     sources:
       - PolarMyFlow
     resources:
-      - path: PolarMyFlow/Resources
-        buildPhase:
-          copyFiles:
-            destination: resources
+      - PolarMyFlow/Resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.personal.polarmyflow
