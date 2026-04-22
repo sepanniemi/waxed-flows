@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0A1428"/>
+      <stop offset="55%" stop-color="#142451"/>
+      <stop offset="100%" stop-color="#1E3A8A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="85%" cy="8%" r="55%">
+      <stop offset="0%" stop-color="#60A5FA" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#60A5FA" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="track" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#93C5FD"/>
+    </linearGradient>
+  </defs>
+  <!-- background -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <!-- hollow moon, top-right -->
+  <g transform="translate(760,180)">
+    <circle cx="0" cy="0" r="78" fill="none" stroke="#BFDBFE" stroke-width="10" opacity="0.8"/>
+    <circle cx="22" cy="-8" r="70" fill="#0A1428"/>
+  </g>
+  <!-- two tracks carving, angled -12° counter-clockwise, ~74% of height -->
+  <g transform="rotate(-12 512 512)">
+    <rect x="356" y="135" width="72" height="754" rx="36" fill="url(#track)"/>
+    <rect x="596" y="135" width="72" height="754" rx="36" fill="url(#track)"/>
+  </g>
+</svg>
