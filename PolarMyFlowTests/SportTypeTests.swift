@@ -28,13 +28,20 @@ final class SportTypeTests: XCTestCase {
         XCTAssertEqual(SportType.xcSkiing.displayName, "XC Skiing")
     }
 
-    func test_symbolName_xcSkiing() {
-        XCTAssertEqual(SportType.xcSkiing.symbolName, "figure.skiing.crosscountry")
+    func test_iconName_xcSkiing() {
+        XCTAssertEqual(SportType.xcSkiing.iconName, "sport-xc-skiing")
     }
 
-    func test_symbolName_other_isValid() {
+    func test_iconName_allCasesNonEmpty() {
         for sport in SportType.allCases {
-            XCTAssertFalse(sport.symbolName.isEmpty, "\(sport) has empty symbolName")
+            XCTAssertFalse(sport.iconName.isEmpty, "\(sport) has empty iconName")
+        }
+    }
+
+    func test_dotColor_allCasesDefined() {
+        // Compile-time guarantee — switch exhaustiveness enforces this.
+        for sport in SportType.allCases {
+            _ = sport.dotColor
         }
     }
 }

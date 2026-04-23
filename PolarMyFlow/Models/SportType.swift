@@ -1,3 +1,5 @@
+import SwiftUI
+
 enum SportType: String, Codable, CaseIterable, Equatable {
     case xcSkiing = "CROSS_COUNTRY_SKIING"
     case running = "RUNNING"
@@ -54,28 +56,33 @@ enum SportType: String, Codable, CaseIterable, Equatable {
         }
     }
 
-    var symbolName: String {
+    var iconName: String {
         switch self {
-        case .xcSkiing:
-            return "figure.skiing.crosscountry"
-        case .running:
-            return "figure.run"
-        case .cycling:
-            return "figure.outdoor.cycle"
-        case .swimming:
-            return "figure.pool.swim"
-        case .hiking:
-            return "figure.hiking"
-        case .strength:
-            return "dumbbell"
-        case .rowing:
-            return "figure.rowing"
-        case .mountainBiking:
-            return "figure.outdoor.cycle"
-        case .walking:
-            return "figure.walk"
-        case .other:
-            return "figure.mixed.cardio"
+        case .xcSkiing:       return "sport-xc-skiing"
+        case .running:        return "sport-running"
+        case .cycling:        return "sport-cycling"
+        case .swimming:       return "sport-swimming"
+        case .hiking:         return "sport-hiking"
+        case .strength:       return "sport-strength"
+        case .rowing:         return "sport-rowing"
+        case .mountainBiking: return "sport-mountain-biking"
+        case .walking:        return "sport-walking"
+        case .other:          return "sport-other"
+        }
+    }
+
+    var dotColor: Color {
+        switch self {
+        case .xcSkiing:       return Palette.polarSkyLight
+        case .running:        return Palette.polarAmber
+        case .cycling:        return Color(red: 0xFC / 255, green: 0xD3 / 255, blue: 0x4D / 255)
+        case .swimming:       return Palette.polarSkyIce
+        case .hiking:         return Color(red: 0x6E / 255, green: 0xE7 / 255, blue: 0xB7 / 255)
+        case .strength:       return Color(red: 0xF8 / 255, green: 0x71 / 255, blue: 0x71 / 255)
+        case .rowing:         return Color(red: 0xA7 / 255, green: 0x8B / 255, blue: 0xFA / 255)
+        case .mountainBiking: return Color(red: 0xFB / 255, green: 0x92 / 255, blue: 0x3C / 255)
+        case .walking:        return Palette.polarSkyIce
+        case .other:          return Palette.inkMuted
         }
     }
 }

@@ -33,7 +33,7 @@ struct SportRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: summary.sport.symbolName)
+            Image(systemName: "circle")
                 .font(.title3)
                 .frame(width: 28)
                 .foregroundStyle(.blue)

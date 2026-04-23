@@ -18,7 +18,7 @@ struct ActivityListView: View {
                                 )) {
                                     Text("All sports").tag(SportType?.none)
                                     ForEach(vm.availableSports, id: \.self) { sport in
-                                        Label(sport.displayName, systemImage: sport.symbolName)
+                                        Label(sport.displayName, systemImage: "circle")
                                             .tag(SportType?.some(sport))
                                     }
                                 }
