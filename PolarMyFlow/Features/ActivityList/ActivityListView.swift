@@ -7,42 +7,9 @@ struct ActivityListView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if let vm = viewModel {
-                    List {
-                        if !vm.availableSports.isEmpty {
-                            Section {
-                                Picker("Sport", selection: Binding(
-                                    get: { vm.selectedSport },
-                                    set: { vm.selectedSport = $0 }
-                                )) {
-                                    Text("All sports").tag(SportType?.none)
-                                    ForEach(vm.availableSports, id: \.self) { sport in
-                                        Label(sport.displayName, systemImage: "circle")
-                                            .tag(SportType?.some(sport))
-                                    }
-                                }
-                                .pickerStyle(.menu)
-                            }
-                        }
-
-                        if vm.activities.isEmpty {
-                            ContentUnavailableView(
-                                "No activities",
-                                systemImage: "figure.run",
-                                description: Text("No activities found for the selected filter.")
-                            )
-                        } else {
-                            ForEach(vm.activities, id: \.id) { activity in
-                                NavigationLink(destination: ActivityDetailView(activity: activity)) {
-                                    ActivityRowView(activity: activity)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Activities")
+            content
+                .polarBackground()
+                .navigationBarHidden(true)
         }
         .task {
             if viewModel == nil {
@@ -54,5 +21,73 @@ struct ActivityListView: View {
         .onAppear {
             Task { await viewModel?.load() }
         }
+    }
+
+    @ViewBuilder private var content: some View {
+        if let vm = viewModel {
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                if !vm.availableSports.isEmpty {
+                    filterRow(vm)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+                }
+                if vm.activities.isEmpty {
+                    PolarEmptyState(
+                        title: "No Sessions Found",
+                        description: "Try a different sport filter or sync your Polar account."
+                    )
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(vm.activities, id: \.id) { activity in
+                                NavigationLink(destination: ActivityDetailView(activity: activity)) {
+                                    ActivityRowView(activity: activity)
+                                }
+                                .buttonStyle(.plain)
+                                PolarRule(variant: .full)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                    }
+                }
+            }
+            .padding(.top, 48)
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Log · All Sessions")
+                .metaLabel()
+            PolarRule(variant: .soft)
+        }
+        .padding(.horizontal, 20)
+    }
+
+    private func filterRow(_ vm: ActivityListViewModel) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                filterBadge(
+                    text: "All",
+                    selected: vm.selectedSport == nil,
+                    action: { vm.selectedSport = nil }
+                )
+                ForEach(vm.availableSports, id: \.self) { sport in
+                    filterBadge(
+                        text: sport.displayName,
+                        selected: vm.selectedSport == sport,
+                        action: { vm.selectedSport = sport }
+                    )
+                }
+            }
+        }
+    }
+
+    private func filterBadge(text: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            PolarBadge(text: text, style: selected ? .filled : .outline)
+        }
+        .buttonStyle(.plain)
     }
 }
