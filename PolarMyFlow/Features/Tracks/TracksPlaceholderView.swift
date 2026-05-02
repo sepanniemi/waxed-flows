@@ -2,42 +2,25 @@ import SwiftUI
 
 struct TracksPlaceholderView: View {
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 32) {
-                Spacer()
+        ZStack {
+            Image("tracksMark")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 220)
+                .foregroundStyle(Palette.ink.opacity(0.08))
 
-                HStack(spacing: 40) {
-                    VStack(spacing: 8) {
-                        Image(systemName: "map")
-                            .font(.system(size: 48))
-                            .foregroundStyle(.tertiary)
-                        Text("Map View")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                    VStack(spacing: 8) {
-                        Image(systemName: "arrow.down.doc")
-                            .font(.system(size: 48))
-                            .foregroundStyle(.tertiary)
-                        Text("GPX Export")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-
-                Text("Coming soon")
-                    .font(.title2.bold())
-                    .foregroundStyle(.secondary)
-
-                Text("Track maps and GPX export will be available in a future version.")
-                    .multilineTextAlignment(.center)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 40)
-
-                Spacer()
+            VStack(spacing: 12) {
+                Text("Tracks")
+                    .font(.displayMedium)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Palette.ink)
+                    .displayShadow()
+                Text("Coming · 2026 · Summer")
+                    .metaLabel()
             }
-            .navigationTitle("Tracks")
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .polarBackground()
     }
 }
