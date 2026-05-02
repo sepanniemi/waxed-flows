@@ -116,7 +116,8 @@ struct SettingsView: View {
     private var accountSection: some View {
         settingsGroup(title: "Account") {
             Button {
-                try? authManager.signOut()
+                do { try authManager.signOut() }
+                catch { print("⚠️ Sign-out failed: \(error)") }
             } label: {
                 rowShell {
                     Text("Sign out")
@@ -187,8 +188,12 @@ struct SettingsView: View {
     private func openPolarExportPage() {
         let url = URL(string: "https://account.polar.com/")!
         Task { @MainActor in
-            UIApplication.shared.open(url) { _ in
-                showExportInstructions = true
+            UIApplication.shared.open(url) { success in
+                if success {
+                    showExportInstructions = true
+                } else {
+                    errorMessage = "Couldn't open account.polar.com — open it manually in your browser to request the export."
+                }
             }
         }
     }
