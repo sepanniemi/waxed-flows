@@ -14,57 +14,25 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section("Import history") {
-                    Button {
-                        openPolarExportPage()
-                    } label: {
-                        Label("Request data export from Polar",
-                              systemImage: "arrow.down.doc")
-                    }
-                    Picker("Import window", selection: $storedYearsBack) {
-                        Text("Last 2 years").tag(2)
-                        Text("Last 4 years").tag(4)
-                        Text("All time").tag(-1)
-                    }
-                    .pickerStyle(.menu)
-                    .disabled(importer?.isRunning == true)
-                    Button {
-                        showFileImporter = true
-                    } label: {
-                        Label("Import from file…",
-                              systemImage: "square.and.arrow.down")
-                    }
-                    .disabled(importer?.isRunning == true)
-
-                    if let importer, importer.isRunning || importer.processed > 0 {
-                        ImportProgressView(importer: importer)
-                    }
-                    if let completionMessage {
-                        Text(completionMessage).foregroundStyle(.secondary)
-                    }
-                    if let errorMessage {
-                        Text(errorMessage).foregroundStyle(.red)
-                    }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    header
+                    importHistorySection
+                    #if DEBUG
+                    debugSection
+                    #endif
+                    accountSection
                 }
-
-                #if DEBUG
-                Section("Debug") {
-                    NavigationLink("Debug settings") { DebugSettingsView() }
-                }
-                #endif
-
-                Section {
-                    Button("Sign out", role: .destructive) {
-                        try? authManager.signOut()
-                    }
-                }
+                .padding(.horizontal, 20)
+                .padding(.top, 48)
+                .padding(.bottom, 40)
             }
-            .navigationTitle("Settings")
+            .polarBackground()
+            .navigationBarHidden(true)
             .alert("Export requested", isPresented: $showExportInstructions) {
                 Button("Got it", role: .cancel) {}
             } message: {
-                Text("Polar will email you a download link within a few hours to a few days. When it arrives, tap the link and choose PolarMyFlow to share the ZIP into the app. By default PolarMyFlow only imports the last 4 years — change Import window above if you want more or fewer years.")
+                Text("Polar will email you a download link within a few hours to a few days. When it arrives, tap the link and choose Waxed Flows to share the ZIP into the app. By default Waxed Flows only imports the last 4 years — change Import window above if you want more or fewer years.")
             }
             .onReceive(NotificationCenter.default.publisher(for: .importZipReceived)) { note in
                 guard let url = note.object as? URL else { return }
@@ -80,6 +48,140 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Settings").metaLabel()
+            PolarRule(variant: .soft)
+        }
+    }
+
+    private var importHistorySection: some View {
+        settingsGroup(title: "Import History") {
+            actionRow(systemIcon: "arrow.down.doc", title: "Request data export from Polar") {
+                openPolarExportPage()
+            }
+
+            pickerRow(title: "Import Window", selection: $storedYearsBack, options: [
+                (2, "Last 2 years"),
+                (4, "Last 4 years"),
+                (-1, "All time"),
+            ])
+            .disabled(importer?.isRunning == true)
+
+            actionRow(systemIcon: "square.and.arrow.down", title: "Import from file…") {
+                showFileImporter = true
+            }
+            .disabled(importer?.isRunning == true)
+
+            if let importer, importer.isRunning || importer.processed > 0 {
+                ImportProgressView(importer: importer)
+            }
+            if let completionMessage {
+                Text(completionMessage)
+                    .font(.bodyCaption)
+                    .foregroundStyle(Palette.inkMuted)
+            }
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.bodyCaption)
+                    .foregroundStyle(Palette.polarAmber)
+            }
+        }
+    }
+
+    #if DEBUG
+    private var debugSection: some View {
+        settingsGroup(title: "Debug") {
+            NavigationLink {
+                DebugSettingsView()
+                    .polarBackground()
+            } label: {
+                rowShell {
+                    Text("Debug settings")
+                        .font(.bodyDefault)
+                        .foregroundStyle(Palette.ink)
+                    Spacer()
+                    Text("›")
+                        .font(.bodyDefault)
+                        .foregroundStyle(Palette.inkFaint)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+    #endif
+
+    private var accountSection: some View {
+        settingsGroup(title: "Account") {
+            Button {
+                try? authManager.signOut()
+            } label: {
+                rowShell {
+                    Text("Sign out")
+                        .font(.bodyDefault)
+                        .foregroundStyle(Palette.polarAmber)
+                    Spacer()
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Row helpers
+
+    @ViewBuilder
+    private func settingsGroup<Content: View>(title: String, @ViewBuilder content: @escaping () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).metaLabel()
+            PolarCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    content()
+                }
+            }
+        }
+    }
+
+    private func actionRow(systemIcon: String, title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            rowShell {
+                PolarActionIcon(systemName: systemIcon)
+                Text(title)
+                    .font(.bodyDefault)
+                    .foregroundStyle(Palette.ink)
+                Spacer()
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func pickerRow<Value: Hashable>(
+        title: String,
+        selection: Binding<Value>,
+        options: [(Value, String)]
+    ) -> some View {
+        HStack {
+            Text(title)
+                .font(.bodyDefault)
+                .foregroundStyle(Palette.ink)
+            Spacer()
+            Picker(title, selection: selection) {
+                ForEach(options, id: \.0) { opt in
+                    Text(opt.1).tag(opt.0)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(Palette.polarSkyLight)
+        }
+    }
+
+    @ViewBuilder
+    private func rowShell<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 12) {
+            content()
+        }
+        .contentShape(Rectangle())
     }
 
     private func openPolarExportPage() {
