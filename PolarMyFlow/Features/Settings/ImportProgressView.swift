@@ -4,35 +4,77 @@ struct ImportProgressView: View {
     @Bindable var importer: HistoryImporter
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                ProgressView(value: Double(importer.processed),
-                             total: Double(max(importer.total, 1)))
-                Text("\(importer.processed) / \(importer.total)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(Int(progressFraction * 100))%")
+                    .font(.displaySmall)
+                    .foregroundStyle(Palette.ink)
+                    .displayShadow()
+                Spacer()
+                Text("\(importer.processed) / \(importer.total) Files")
+                    .metaLabel()
             }
-            HStack(spacing: 16) {
-                Label("\(importer.imported)", systemImage: "checkmark.circle")
-                    .foregroundStyle(.green)
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Palette.surfaceBorder)
+                    Capsule()
+                        .fill(Palette.polarSky)
+                        .frame(width: proxy.size.width * progressFraction)
+                }
+            }
+            .frame(height: 2)
+
+            HStack(spacing: 14) {
+                statusChip(
+                    systemName: "checkmark.circle",
+                    text: "\(importer.imported)",
+                    tint: Palette.polarSky
+                )
                 if importer.skipped > 0 {
-                    Label("\(importer.skipped) duplicates",
-                          systemImage: "arrow.triangle.2.circlepath")
-                        .foregroundStyle(.secondary)
+                    statusChip(
+                        systemName: "arrow.triangle.2.circlepath",
+                        text: "\(importer.skipped) dup",
+                        tint: Palette.polarSkyIce
+                    )
                 }
                 if importer.failed > 0 {
-                    Label("\(importer.failed) errors",
-                          systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
+                    statusChip(
+                        systemName: "exclamationmark.triangle",
+                        text: "\(importer.failed) err",
+                        tint: Palette.polarAmber
+                    )
                 }
+                Spacer()
+                Button("Cancel") { importer.cancel() }
+                    .font(.metaDefault)
+                    .tracking(1.5)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Palette.polarSkyLight)
+                    .buttonStyle(.plain)
             }
-            .font(.caption)
-
-            Button("Cancel") { importer.cancel() }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
         }
-        .padding()
-        .background(.bar, in: .rect(cornerRadius: 10))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(Palette.surfaceGlass, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(Palette.surfaceBorder, lineWidth: 1)
+        )
+    }
+
+    private var progressFraction: Double {
+        guard importer.total > 0 else { return 0 }
+        return min(1, Double(importer.processed) / Double(importer.total))
+    }
+
+    private func statusChip(systemName: String, text: String, tint: Color) -> some View {
+        HStack(spacing: 4) {
+            PolarActionIcon(systemName: systemName, size: 12, tint: tint)
+            Text(text)
+                .font(.metaDefault)
+                .tracking(1.2)
+                .foregroundStyle(tint)
+        }
     }
 }
