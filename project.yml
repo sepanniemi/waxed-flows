@@ -36,6 +36,7 @@ targets:
         UIAppFonts:
           - Anton-Regular.ttf
         UILaunchStoryboardName: ""
+        LSSupportsOpeningDocumentsInPlace: true
         CFBundleDocumentTypes:
           - CFBundleTypeName: Polar Data Export
             CFBundleTypeRole: Viewer
