@@ -77,10 +77,6 @@ struct ActivityDetailView: View {
             Spacer()
             if let hr = vm.avgHRString {
                 statCell(value: hr, label: "Avg HR")
-                Spacer()
-            }
-            if let asc = vm.ascentString {
-                statCell(value: asc, label: "Ascent m")
             }
         }
     }
