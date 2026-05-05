@@ -54,13 +54,6 @@ struct ImportProgressView: View {
                     .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(Palette.surfaceGlass, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(Palette.surfaceBorder, lineWidth: 1)
-        )
     }
 
     private var progressFraction: Double {
