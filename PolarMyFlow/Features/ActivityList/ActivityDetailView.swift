@@ -1,39 +1,35 @@
 import SwiftUI
 
 struct ActivityDetailView: View {
-    let activity: Activity
     @Environment(\.dismiss) private var dismiss
-    @State private var viewModel: ActivityDetailViewModel?
+    @State private var viewModel: ActivityDetailViewModel
 
-    var body: some View {
-        content
-            .polarBackground()
-            .navigationBarHidden(true)
-            .onAppear { viewModel = ActivityDetailViewModel(activity: activity) }
+    init(activity: Activity) {
+        _viewModel = State(initialValue: ActivityDetailViewModel(activity: activity))
     }
 
-    @ViewBuilder private var content: some View {
-        if let vm = viewModel {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    header(vm)
-                    heroStats(vm)
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                header(viewModel)
+                heroStats(viewModel)
+                PolarRule(variant: .full)
+                threeUp(viewModel)
+                // FIXME: HR zone chart not wired — Activity model has no zone-time data.
+                if viewModel.ascentString != nil || viewModel.descentString != nil {
                     PolarRule(variant: .full)
-                    threeUp(vm)
-                    // FIXME: HR zone chart not wired — Activity model has no zone-time data.
-                    if vm.ascentString != nil || vm.descentString != nil {
-                        PolarRule(variant: .full)
-                        elevation(vm)
-                    }
-                    if let calories = vm.caloriesString {
-                        PolarRule(variant: .full)
-                        energy(calories)
-                    }
+                    elevation(viewModel)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 48)
+                if let calories = viewModel.caloriesString {
+                    PolarRule(variant: .full)
+                    energy(calories)
+                }
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 48)
         }
+        .polarBackground()
+        .navigationBarHidden(true)
     }
 
     private func header(_ vm: ActivityDetailViewModel) -> some View {
