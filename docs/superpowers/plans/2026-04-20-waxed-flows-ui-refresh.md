@@ -2275,7 +2275,7 @@ struct SettingsView: View {
     // MARK: - Row helpers
 
     @ViewBuilder
-    private func settingsGroup<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func settingsGroup<Content: View>(title: String, @ViewBuilder content: @escaping () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title).metaLabel()
             PolarCard {
