@@ -1,20 +1,23 @@
 import SwiftUI
 import SwiftData
 
+enum DashboardRoute: Hashable {
+    case sportDetail(SportType, Season)
+}
+
 struct DashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel: DashboardViewModel?
     @State private var navigationPath = NavigationPath()
-    @State private var selectedSport: SportType?
-    @State private var selectedSeason: Season?
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
             content
                 .polarBackground()
                 .navigationBarHidden(true)
-                .navigationDestination(for: String.self) { _ in
-                    if let sport = selectedSport, let season = selectedSeason {
+                .navigationDestination(for: DashboardRoute.self) { route in
+                    switch route {
+                    case .sportDetail(let sport, let season):
                         SportDetailView(sport: sport, season: season)
                     }
                 }
@@ -51,9 +54,7 @@ struct DashboardView: View {
                         header
                         ForEach(vm.seasons) { season in
                             SeasonCardView(summary: season) { sport in
-                                selectedSport = sport
-                                selectedSeason = season.season
-                                navigationPath.append("sport-detail")
+                                navigationPath.append(DashboardRoute.sportDetail(sport, season.season))
                             }
                         }
                     }
