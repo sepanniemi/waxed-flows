@@ -7,6 +7,7 @@ struct SportDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel: SportDetailViewModel?
+    @State private var reloadTask: Task<Void, Never>?
 
     var body: some View {
         content
@@ -29,8 +30,8 @@ struct SportDetailView: View {
                     datePickerBlock(vm)
                     activitiesBlock(vm)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 48)
+                .padding(.horizontal, Spacing.screenMargin)
+                .padding(.top, Spacing.screenTop)
             }
         } else {
             ProgressView()
@@ -40,19 +41,11 @@ struct SportDetailView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button { dismiss() } label: {
-                Text("◂ Dash · \(season.label)")
-                    .metaLabel()
-            }
-            .buttonStyle(.plain)
-            PolarRule(variant: .soft)
-            Text(sport.displayName)
-                .font(.displayMedium)
-                .textCase(.uppercase)
-                .foregroundStyle(Palette.polarSkyLight)
-                .displayShadow()
-        }
+        PolarBackHeader(
+            crumb: "Dash · \(season.label)",
+            title: sport.displayName,
+            onDismiss: { dismiss() }
+        )
     }
 
     private func summaryRow(_ vm: SportDetailViewModel) -> some View {
@@ -79,19 +72,28 @@ struct SportDetailView: View {
                 Text("Date Range").metaLabel()
                 DatePicker("From", selection: Binding(
                     get: { vm.startDate },
-                    set: { vm.startDate = $0; Task { await vm.load() } }
+                    set: { vm.startDate = $0; scheduleReload(vm) }
                 ), displayedComponents: .date)
                     .font(.bodyDefault)
                     .foregroundStyle(Palette.ink)
                     .tint(Palette.polarSky)
                 DatePicker("To", selection: Binding(
                     get: { vm.endDate },
-                    set: { vm.endDate = $0; Task { await vm.load() } }
+                    set: { vm.endDate = $0; scheduleReload(vm) }
                 ), displayedComponents: .date)
                     .font(.bodyDefault)
                     .foregroundStyle(Palette.ink)
                     .tint(Palette.polarSky)
             }
+        }
+    }
+
+    private func scheduleReload(_ vm: SportDetailViewModel) {
+        reloadTask?.cancel()
+        reloadTask = Task {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            await vm.load()
         }
     }
 

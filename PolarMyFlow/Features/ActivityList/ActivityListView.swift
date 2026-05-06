@@ -29,7 +29,7 @@ struct ActivityListView: View {
                 header
                 if !vm.availableSports.isEmpty {
                     filterRow(vm)
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, Spacing.screenMargin)
                         .padding(.top, 16)
                 }
                 if vm.activities.isEmpty {
@@ -48,11 +48,11 @@ struct ActivityListView: View {
                                 PolarRule(variant: .full)
                             }
                         }
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, Spacing.screenMargin)
                     }
                 }
             }
-            .padding(.top, 48)
+            .padding(.top, Spacing.screenTop)
         }
     }
 
@@ -62,7 +62,7 @@ struct ActivityListView: View {
                 .metaLabel()
             PolarRule(variant: .soft)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, Spacing.screenMargin)
     }
 
     private func filterRow(_ vm: ActivityListViewModel) -> some View {
@@ -89,5 +89,7 @@ struct ActivityListView: View {
             PolarBadge(text: text, style: selected ? .filled : .outline)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(text)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

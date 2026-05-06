@@ -23,8 +23,8 @@ struct SettingsView: View {
                     #endif
                     accountSection
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 48)
+                .padding(.horizontal, Spacing.screenMargin)
+                .padding(.top, Spacing.screenTop)
                 .padding(.bottom, 40)
             }
             .polarBackground()
@@ -106,6 +106,7 @@ struct SettingsView: View {
                     Text("›")
                         .font(.bodyDefault)
                         .foregroundStyle(Palette.inkFaint)
+                        .accessibilityHidden(true)
                 }
             }
             .buttonStyle(.plain)
@@ -122,7 +123,7 @@ struct SettingsView: View {
                 rowShell {
                     Text("Sign out")
                         .font(.bodyDefault)
-                        .foregroundStyle(Palette.polarAmber)
+                        .foregroundStyle(Palette.destructive)
                     Spacer()
                 }
             }
@@ -174,6 +175,8 @@ struct SettingsView: View {
             }
             .pickerStyle(.menu)
             .tint(Palette.polarSkyLight)
+            .labelsHidden()
+            .accessibilityLabel(title)
         }
     }
 

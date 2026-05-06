@@ -12,5 +12,6 @@ struct PolarActionIcon: View {
         Image(systemName: systemName)
             .font(.system(size: size, weight: .medium))
             .foregroundStyle(tint)
+            .accessibilityHidden(true)
     }
 }

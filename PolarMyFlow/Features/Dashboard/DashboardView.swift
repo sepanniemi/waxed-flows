@@ -58,8 +58,8 @@ struct DashboardView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 48)
+                    .padding(.horizontal, Spacing.screenMargin)
+                    .padding(.top, Spacing.screenTop)
                 }
             }
         }

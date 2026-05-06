@@ -26,7 +26,7 @@ struct MainTabView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             tabContent
-                .padding(.bottom, 80)  // room for custom tab bar
+                .padding(.bottom, PolarTabBar.reservedBottomHeight)
 
             VStack(spacing: 0) {
                 if isSyncing || syncMessage != nil {

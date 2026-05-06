@@ -9,6 +9,7 @@ struct TracksPlaceholderView: View {
                 .scaledToFit()
                 .frame(width: 220)
                 .foregroundStyle(Palette.ink.opacity(0.08))
+                .accessibilityHidden(true)
 
             VStack(spacing: 12) {
                 Text("Tracks")

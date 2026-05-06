@@ -25,27 +25,20 @@ struct ActivityDetailView: View {
                     energy(calories)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 48)
+            .padding(.horizontal, Spacing.screenMargin)
+            .padding(.top, Spacing.screenTop)
         }
         .polarBackground()
         .navigationBarHidden(true)
     }
 
     private func header(_ vm: ActivityDetailViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button { dismiss() } label: {
-                Text("◂ Log · \(vm.dateString)")
-                    .metaLabel()
-            }
-            .buttonStyle(.plain)
-            PolarRule(variant: .soft)
-            Text(vm.title)
-                .font(.displaySmall)
-                .textCase(.uppercase)
-                .foregroundStyle(Palette.polarSkyLight)
-                .displayShadow()
-        }
+        PolarBackHeader(
+            crumb: "Log · \(vm.dateString)",
+            title: vm.title,
+            titleFont: .displaySmall,
+            onDismiss: { dismiss() }
+        )
     }
 
     private func heroStats(_ vm: ActivityDetailViewModel) -> some View {

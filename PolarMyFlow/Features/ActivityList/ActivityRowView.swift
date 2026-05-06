@@ -40,5 +40,6 @@ struct ActivityRowView: View {
         .padding(.vertical, 12)
         .padding(.horizontal, 4)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }

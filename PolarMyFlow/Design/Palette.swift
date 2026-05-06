@@ -16,4 +16,7 @@ enum Palette {
     static let surfaceGlass  = Color.white.opacity(0.04)
     static let surfaceBorder = Color.white.opacity(0.08)
     static let ruleSoft      = Color.white.opacity(0.14)
+
+    /// Semantic alias — destructive / caution actions (sign out, delete).
+    static let destructive   = polarAmber
 }

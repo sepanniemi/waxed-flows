@@ -24,6 +24,10 @@ enum PolarTab: Int, CaseIterable, Identifiable {
 }
 
 struct PolarTabBar: View {
+    /// Bottom inset content above the tab bar should reserve.
+    /// Matches `padding(.top, 12) + tab content (~44) + padding(.bottom, 24)`.
+    static let reservedBottomHeight: CGFloat = 80
+
     @Binding var selection: PolarTab
 
     var body: some View {
