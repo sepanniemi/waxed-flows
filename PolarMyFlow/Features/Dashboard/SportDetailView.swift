@@ -32,6 +32,10 @@ struct SportDetailView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 48)
             }
+        } else {
+            ProgressView()
+                .tint(Palette.polarSkyLight)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
