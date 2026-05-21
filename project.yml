@@ -47,6 +47,7 @@ targets:
       - sdk: SwiftData.framework
       - sdk: AuthenticationServices.framework
       - sdk: Security.framework
+      - sdk: MapKit.framework
       - package: ZIPFoundation
 
   PolarMyFlowTests:
