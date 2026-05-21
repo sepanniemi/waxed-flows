@@ -16,6 +16,12 @@ final class Activity {
     var descent: Double?            // metres lost
     var calories: Int?
     var hasRoute: Bool
+    @Attribute(.externalStorage) var routePointsData: Data?
+
+    var routePoints: [RoutePoint] {
+        guard let data = routePointsData else { return [] }
+        return (try? JSONDecoder().decode([RoutePoint].self, from: data)) ?? []
+    }
 
     var sportType: SportType { SportType(polarString: sportRawValue) }
 
@@ -32,7 +38,8 @@ final class Activity {
         ascent: Double? = nil,
         descent: Double? = nil,
         calories: Int? = nil,
-        hasRoute: Bool = false
+        hasRoute: Bool = false,
+        routePointsData: Data? = nil
     ) {
         self.id = id
         self.startTime = startTime
@@ -47,5 +54,6 @@ final class Activity {
         self.descent = descent
         self.calories = calories
         self.hasRoute = hasRoute
+        self.routePointsData = routePointsData
     }
 }
