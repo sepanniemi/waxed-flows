@@ -3,6 +3,7 @@ import SwiftUI
 struct ActivityDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel: ActivityDetailViewModel
+    @State private var scrubFraction: Double = 0.0
 
     init(activity: Activity) {
         _viewModel = State(initialValue: ActivityDetailViewModel(activity: activity))
@@ -15,6 +16,10 @@ struct ActivityDetailView: View {
                 heroStats(viewModel)
                 PolarRule(variant: .full)
                 threeUp(viewModel)
+                if viewModel.activity.hasRoute {
+                    PolarRule(variant: .full)
+                    trackSection(viewModel.activity)
+                }
                 // FIXME: HR zone chart not wired — Activity model has no zone-time data.
                 if viewModel.ascentString != nil || viewModel.descentString != nil {
                     PolarRule(variant: .full)
@@ -66,6 +71,18 @@ struct ActivityDetailView: View {
             Spacer()
             if let hr = vm.avgHRString {
                 statCell(value: hr, label: "Avg HR")
+            }
+        }
+    }
+
+    private func trackSection(_ activity: Activity) -> some View {
+        PolarCard {
+            VStack(spacing: 12) {
+                TrackMapView(routePoints: activity.routePoints, scrubFraction: $scrubFraction)
+                    .frame(height: 260)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                Slider(value: $scrubFraction, in: 0...1)
+                    .tint(Palette.polarAmber)
             }
         }
     }
