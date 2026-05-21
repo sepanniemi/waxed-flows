@@ -13,14 +13,28 @@ struct GDPRTrainingSession: Decodable {
     let exercises: [Exercise]?
 
     struct SportRef: Decodable { let id: String }
+
     struct Exercise: Decodable {
         let ascentMeters: Double?
         let descentMeters: Double?
+        let routes: RoutesContainer?
     }
 
-    // Maps the session into an Activity. Returns nil if duration is zero or
-    // start time can't be parsed. fileID is used as Activity.id because the
-    // JSON itself does not carry a stable numeric ID we can trust.
+    struct RoutesContainer: Decodable {
+        let route: RouteData?
+    }
+
+    struct RouteData: Decodable {
+        let wayPoints: [WayPoint]?
+    }
+
+    struct WayPoint: Decodable {
+        let longitude: Double
+        let latitude: Double
+        let altitude: Double?
+        let elapsedMillis: Int
+    }
+
     func toActivity(fileID: String) -> Activity? {
         guard durationMillis > 0 else { return nil }
         guard let start = Self.parseDate(startTime) else { return nil }
@@ -32,6 +46,13 @@ struct GDPRTrainingSession: Decodable {
 
         let sportId = sport.flatMap { Int($0.id) } ?? -1
         let sportStr = SportType.from(polarSportId: sportId).rawValue
+
+        let waypoints = exercises?.first?.routes?.route?.wayPoints ?? []
+        let routePoints = waypoints.map {
+            RoutePoint(latitude: $0.latitude, longitude: $0.longitude,
+                       altitude: $0.altitude ?? 0, elapsedMillis: $0.elapsedMillis)
+        }
+        let routeData: Data? = routePoints.isEmpty ? nil : try? JSONEncoder().encode(routePoints)
 
         return Activity(
             id: fileID,
@@ -46,7 +67,8 @@ struct GDPRTrainingSession: Decodable {
             ascent: exercises?.first?.ascentMeters,
             descent: exercises?.first?.descentMeters,
             calories: calories,
-            hasRoute: false
+            hasRoute: !routePoints.isEmpty,
+            routePointsData: routeData
         )
     }
 
