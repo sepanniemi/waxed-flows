@@ -39,8 +39,10 @@ struct TrackMapView: UIViewRepresentable {
 
     final class Coordinator: NSObject, MKMapViewDelegate {
         private let scrubAnnotation = MKPointAnnotation()
+        private var cachedRoutePoints: [RoutePoint] = []
 
         func buildOverlays(on mapView: MKMapView, routePoints: [RoutePoint]) {
+            cachedRoutePoints = routePoints
             guard routePoints.count >= 2 else { return }
 
             let rawSpeeds = computeRawSpeeds(routePoints)
@@ -89,11 +91,11 @@ struct TrackMapView: UIViewRepresentable {
         }
 
         func moveScrubDot(on mapView: MKMapView, routePoints: [RoutePoint], fraction: Double) {
-            guard !routePoints.isEmpty else { return }
-            let idx = min(routePoints.count - 1, max(0, Int(fraction * Double(routePoints.count - 1))))
+            guard !cachedRoutePoints.isEmpty else { return }
+            let idx = min(cachedRoutePoints.count - 1, max(0, Int(fraction * Double(cachedRoutePoints.count - 1))))
             scrubAnnotation.coordinate = CLLocationCoordinate2D(
-                latitude: routePoints[idx].latitude,
-                longitude: routePoints[idx].longitude)
+                latitude: cachedRoutePoints[idx].latitude,
+                longitude: cachedRoutePoints[idx].longitude)
         }
 
         // MARK: MKMapViewDelegate
@@ -149,7 +151,7 @@ struct TrackMapView: UIViewRepresentable {
             }
         }
 
-        // 5-second centred rolling mean to smooth GPS-jitter speed spikes
+        // 2.5-second trailing rolling mean to smooth GPS-jitter speed spikes
         private func rollingMean(speeds: [Double], midTimes: [Int], halfWindowMs: Int = 2500) -> [Double] {
             guard !speeds.isEmpty else { return [] }
             var result = [Double](repeating: 0, count: speeds.count)
@@ -218,7 +220,7 @@ struct TrackMapView: UIViewRepresentable {
                 }
             }
             if current.count >= 2 {
-                result.append((current, normalized(smoothedSpeeds.last ?? 0.5)))
+                result.append((current, Double(currentBin) / 99.0))
             }
             return result
         }
