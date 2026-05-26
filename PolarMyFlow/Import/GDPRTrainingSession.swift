@@ -18,10 +18,40 @@ struct GDPRTrainingSession: Decodable {
         let ascentMeters: Double?
         let descentMeters: Double?
         let routes: RoutesContainer?
+        let samples: SamplesWrapper?
     }
 
     struct RoutesContainer: Decodable {
         let route: RouteData?
+    }
+
+    struct SamplesWrapper: Decodable {
+        let samples: [SampleSeries]?
+    }
+
+    struct SampleSeries: Decodable {
+        let type: String
+        let intervalMillis: Int
+        let values: [Double?]
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            type           = try c.decode(String.self, forKey: .type)
+            intervalMillis = try c.decode(Int.self,    forKey: .intervalMillis)
+            var raw = try c.nestedUnkeyedContainer(forKey: .values)
+            var decoded: [Double?] = []
+            while !raw.isAtEnd {
+                if let d = try? raw.decode(Double.self) {
+                    decoded.append(d.isFinite && d > 0 ? d : nil)
+                } else {
+                    _ = try? raw.decode(String.self)   // consume "NaN" string
+                    decoded.append(nil)
+                }
+            }
+            values = decoded
+        }
+
+        enum CodingKeys: String, CodingKey { case type, intervalMillis, values }
     }
 
     struct RouteData: Decodable {
@@ -67,6 +97,8 @@ struct GDPRTrainingSession: Decodable {
         let sportStr = SportType.from(polarSportId: sportId).rawValue
 
         let waypoints = exercises?.first?.routes?.route?.wayPoints ?? []
+        let speedSeries = exercises?.first?.samples?.samples?.first(where: { $0.type == "SPEED" })
+
         // Old exports lack elapsedMillis. Synthesize even-spaced timestamps
         // across the session duration so the polyline renders (speed will
         // appear constant — accurate timing isn't recoverable).
@@ -74,9 +106,15 @@ struct GDPRTrainingSession: Decodable {
             let t = w.elapsedMillis ?? (waypoints.count > 1
                 ? durationMillis * i / (waypoints.count - 1)
                 : 0)
+            var pointSpeed: Double? = nil
+            if let series = speedSeries, series.intervalMillis > 0 {
+                let idx = t / series.intervalMillis
+                if idx >= 0 && idx < series.values.count {
+                    pointSpeed = series.values[idx]
+                }
+            }
             return RoutePoint(latitude: w.latitude, longitude: w.longitude,
-                              altitude: w.altitude ?? 0, elapsedMillis: t,
-                              speedKmh: nil)
+                              altitude: w.altitude ?? 0, elapsedMillis: t, speedKmh: pointSpeed)
         }
         let routeData: Data? = routePoints.isEmpty ? nil : try? JSONEncoder().encode(routePoints)
 
