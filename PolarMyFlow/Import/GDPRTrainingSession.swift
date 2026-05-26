@@ -32,7 +32,26 @@ struct GDPRTrainingSession: Decodable {
         let longitude: Double
         let latitude: Double
         let altitude: Double?
-        let elapsedMillis: Int
+        let elapsedMillis: Int?
+
+        // Older Polar exports (pre-2011) omit elapsedMillis and write altitude
+        // as the string "NaN". Decode both leniently so the whole route isn't
+        // rejected for a single field.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            longitude = try c.decode(Double.self, forKey: .longitude)
+            latitude  = try c.decode(Double.self, forKey: .latitude)
+            elapsedMillis = try c.decodeIfPresent(Int.self, forKey: .elapsedMillis)
+            if let d = try? c.decode(Double.self, forKey: .altitude) {
+                altitude = d.isFinite ? d : nil
+            } else {
+                altitude = nil  // string "NaN" or missing key
+            }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case longitude, latitude, altitude, elapsedMillis
+        }
     }
 
     func toActivity(fileID: String) -> Activity? {
@@ -48,9 +67,16 @@ struct GDPRTrainingSession: Decodable {
         let sportStr = SportType.from(polarSportId: sportId).rawValue
 
         let waypoints = exercises?.first?.routes?.route?.wayPoints ?? []
-        let routePoints = waypoints.map {
-            RoutePoint(latitude: $0.latitude, longitude: $0.longitude,
-                       altitude: $0.altitude ?? 0, elapsedMillis: $0.elapsedMillis)
+        // Old exports lack elapsedMillis. Synthesize even-spaced timestamps
+        // across the session duration so the polyline renders (speed will
+        // appear constant — accurate timing isn't recoverable).
+        let routePoints: [RoutePoint] = waypoints.enumerated().map { (i, w) in
+            let t = w.elapsedMillis ?? (waypoints.count > 1
+                ? durationMillis * i / (waypoints.count - 1)
+                : 0)
+            return RoutePoint(latitude: w.latitude, longitude: w.longitude,
+                              altitude: w.altitude ?? 0, elapsedMillis: t,
+                              speedKmh: nil)
         }
         let routeData: Data? = routePoints.isEmpty ? nil : try? JSONEncoder().encode(routePoints)
 
