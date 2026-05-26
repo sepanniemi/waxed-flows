@@ -4,10 +4,13 @@ struct ActivityDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel: ActivityDetailViewModel
     @State private var scrubFraction: Double = 0.0
-    @State private var cachedRoutePoints: [RoutePoint] = []
+    @State private var scrubSpeedKmh: Double = 0.0
+    @State private var cachedRoutePoints: [RoutePoint]
 
     init(activity: Activity) {
         _viewModel = State(initialValue: ActivityDetailViewModel(activity: activity))
+        // Decode once at init so routePoints are ready before makeUIView is called.
+        _cachedRoutePoints = State(initialValue: activity.hasRoute ? activity.routePoints : [])
     }
 
     var body: some View {
@@ -35,11 +38,6 @@ struct ActivityDetailView: View {
             .padding(.top, Spacing.screenTop)
         }
         .polarBackground()
-        .onAppear {
-            if viewModel.activity.hasRoute {
-                cachedRoutePoints = viewModel.activity.routePoints
-            }
-        }
         .navigationBarHidden(true)
     }
 
@@ -82,14 +80,23 @@ struct ActivityDetailView: View {
     }
 
     private func trackSection() -> some View {
-        PolarCard {
-            VStack(spacing: 12) {
-                TrackMapView(routePoints: cachedRoutePoints, scrubFraction: $scrubFraction)
-                    .frame(height: 260)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                Slider(value: $scrubFraction, in: 0...1)
-                    .tint(Palette.polarAmber)
+        VStack(spacing: 12) {
+            TrackMapView(routePoints: cachedRoutePoints,
+                         scrubFraction: $scrubFraction,
+                         speedKmh: $scrubSpeedKmh)
+                .frame(height: 380)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .padding(.horizontal, -Spacing.screenMargin)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(String(format: "%.1f", scrubSpeedKmh))
+                    .font(.displaySmall)
+                    .foregroundStyle(Palette.ink)
+                    .displayShadow()
+                Text("km/h").metaLabel()
+                Spacer()
             }
+            Slider(value: $scrubFraction, in: 0...1)
+                .tint(Palette.polarAmber)
         }
     }
 
