@@ -3,6 +3,8 @@
 **Date:** 2026-05-30
 **Branch:** `waxed-flows-refresh`
 **Status:** Approved (brainstorm complete)
+**Scope:** Render-side track visuals only. Speed *sourcing* for ongoing API sync
+is a separate effort — see "Follow-up" below.
 
 ## Problem
 
@@ -33,9 +35,7 @@ so dense sections can't be inspected.
 - The relative color scale stays rich on varied routes but tells the truth on
   flat ones.
 - Every route point has a real-derived speed (no amber placeholder, no frozen
-  readout).
-- Real recorded speed is sourced for **both** import paths — GDPR export *and*
-  AccessLink API activities — using the same time-aligned `SPEED` series logic.
+  readout) wherever a `SPEED` series exists in the stored route.
 - The map supports pinch-zoom and pan with a one-tap recenter to the full route.
 
 ## Non-Goals
@@ -43,14 +43,12 @@ so dense sections can't be inspected.
 - No absolute/global km/h color scale (sport-dependent; relative-per-route is the
   chosen model).
 - No legend (the live scrub readout already gives the precise value).
-- Speed remains a real recorded `SPEED` series — never calculated from
-  distance/time. (This design extends the *sources* to AccessLink; it does not
-  introduce computed speed.)
-- No switch of the AccessLink route geometry away from GPX (GPX stays the
-  geometry source; speed comes from the samples endpoint alongside it).
-- No render-side change requires re-import. AccessLink speed, however, only
-  populates on the next pull (or a re-pull) since GPX-only activities were stored
-  without it; this is expected, not a migration.
+- Speed is never calculated from distance/time — it remains a real recorded
+  `SPEED` series. This spec consumes whatever `speedKmh` is already in the stored
+  `routePoints` (GDPR import populates it today); extending the *sources* of that
+  speed to the live API is the Follow-up's job, not this spec's.
+- No re-import or Core Data migration — all behavior here runs at load/render time
+  over already-stored `routePoints`.
 
 ## Design
 
@@ -145,55 +143,10 @@ a stored `MKMapView` reference or a `Binding`-driven trigger) to
 Initial-load auto-fit is unchanged. Scrubbing still moves the dot but no longer
 force-recenters the map, so a manual zoom isn't yanked away mid-inspection.
 
-### 5. AccessLink speed sourcing
-
-AccessLink fetches route geometry as GPX (`/v3/exercises/{id}/gpx`), which carries
-no speed. `GPXParser` therefore sets `speedKmh = nil`, leaving AccessLink
-activities with no real speed. We add the recorded `SPEED` series from the
-AccessLink **samples** endpoint and align it to the GPX waypoints by time —
-mirroring the GDPR pipeline so both paths produce identical `speedKmh` semantics.
-
-**Fetch (in `PolarAccessLinkClient`):** after `fetchGPX` returns the geometry,
-request the SPEED sample series for the same exercise:
-
-- `GET /v3/exercises/{id}/samples/{SPEED_TYPE}` returns `recording-rate` (seconds)
-  and a comma-separated `data` string of values. Parse `data` into `[Double?]`
-  (empty / non-numeric entries → `nil`, matching how GDPR treats `"NaN"`).
-- `recording-rate` seconds → `intervalMillis = recordingRate * 1000`.
-- **First implementation step is runtime verification** against a real response:
-  confirm the exact sample **type id** for SPEED, the **units** (km/h vs m/s — if
-  m/s, multiply by 3.6), and the `data`/`recording-rate` field names. The design
-  is unit-correct only once these are confirmed; the plan must start here.
-- Sample fetch is best-effort: any failure (no samples, 404, parse error) leaves
-  `speedKmh = nil` for that activity, exactly as today — the route still renders,
-  just without speed coloring until a re-pull succeeds.
-
-**Shared alignment helper.** The time-alignment math currently inlined in
-`GDPRTrainingSession.toActivity` is extracted into a pure, testable unit reused by
-both paths:
-
-```
-SpeedSampleAligner.attach(
-    series: (intervalMillis: Int, values: [Double?]),
-    to routePoints: [RoutePoint]
-) -> [RoutePoint]
-```
-
-For each route point it computes `idx = elapsedMillis / intervalMillis` and, when
-in range, sets `speedKmh = values[idx]` (else `nil`). It returns new `RoutePoint`s
-with geometry unchanged. `GDPRTrainingSession` is refactored to build
-geometry-only route points and call this helper (behavior-preserving); the
-AccessLink path calls the same helper after fetching its SPEED series. Nil-fill
-interpolation (§3) still happens later at render time, so the leading sensor-lock
-gap is handled identically for both sources.
-
 ## Components & Responsibilities
 
 | Unit | Responsibility |
 |------|----------------|
-| `SpeedSampleAligner.attach` | aligns a `SPEED` series to route points by time → `[RoutePoint]` with `speedKmh` set; reused by GDPR + AccessLink |
-| `PolarAccessLinkClient` | fetches GPX geometry + SPEED samples, calls the aligner |
-| `GDPRTrainingSession.toActivity` | builds geometry-only points, calls the aligner (refactored) |
 | `SpeedInterpolator.fill` | `[Double?]` → fully-populated `[Double]` (or empty if all-nil) |
 | `SpeedNormalizer.make` | `[Double]` → percentile-with-floor normalize closure |
 | `GlowProfile` | `normalizedSpeed` → pre-zoom blur factor + glow alpha |
@@ -205,12 +158,7 @@ gap is handled identically for both sources.
 ## Data Flow
 
 ```
-Import (speedKmh baked into stored routePoints):
-  GDPR:      waypoints + SPEED series  → SpeedSampleAligner.attach → routePoints
-  AccessLink: GPX geometry + samples SPEED series → SpeedSampleAligner.attach → routePoints
-
-Render (load time, over stored routePoints):
-routePoints (stored, speedKmh: Double?)
+routePoints (stored, speedKmh: Double? — populated at import)
   → Coordinator.buildOverlays
       → SpeedInterpolator.fill([speedKmh])  →  filledSpeeds: [Double]
       → SpeedNormalizer.make(filledSpeeds)  →  normalize
@@ -230,10 +178,6 @@ build + on-device inspection and noted as such):
   varied input maps p50→~0.5, p90→~1.0, p10→~0.0; <2 known → constant 0.5.
 - `GlowProfile`: blur and alpha monotonic in `n`; endpoints `n=0` and `n=1`
   match the spec constants.
-- `SpeedSampleAligner.attach`: in-range index maps the right value; out-of-range
-  (waypoint time beyond the series) → nil; `intervalMillis <= 0` → all nil;
-  unchanged geometry; GDPR refactor is behavior-preserving (same output as the
-  current inline logic on a captured session).
 
 Renderer pixel output and the zoom/recenter interaction are verified visually in
 the iOS Simulator (iPhone 17 Pro) and on device.
@@ -247,8 +191,26 @@ the iOS Simulator (iPhone 17 Pro) and on device.
   grouping segments into a few bloom tiers drawn in shared layers.
 - **Recenter wiring.** Passing the map-fit trigger from SwiftUI button to the
   `MKMapView` cleanly (without retain cycles or stale references) needs care.
-- **AccessLink samples shape/units unverified.** Sample type id, units (km/h vs
-  m/s), and field names are from documentation/memory, not a live response. The
-  plan's first step verifies against a real exercise; the conversion (e.g. m/s ·
-  3.6) and type id are finalized only after that. Best-effort fetch means a wrong
-  guess degrades gracefully (no speed) rather than corrupting data.
+
+## Follow-up (separate spec): unify ongoing sync on Polar API v4
+
+Sourcing real speed for *new* activities (not from the GDPR file) is its own
+sub-project, to be brainstormed separately. Investigation on 2026-05-30 confirmed
+that **Polar API v4 (`auth.polar.com` / Dynamic AccessLink v4) returns the same
+data model as the GDPR export**:
+
+- `GET /training-sessions?from=&to=` lists completed sessions over a date range.
+- A session embeds `trainingsessionSamples` as `{type, intervalMillis, values}`
+  with an `IntervalValuesSampleType` enum including **SPEED**, ALTITUDE, DISTANCE,
+  HEART_RATE, CADENCE — the same `"type"` strings the app already matches.
+- The route is `domainstrainingsessionRoute` → `wayPoints[]` of
+  `{longitude, latitude, altitude, elapsedMillis}` — identical to the GDPR
+  `WayPoint`.
+
+So the existing `GDPRTrainingSession` decoders (`SampleSeries`, `WayPoint`) and a
+shared time-aligner would serve both file import and live sync, replacing the v3
+`PolarAccessLinkClient` GPX+samples path. Cost: an OAuth2 auth rework
+(`auth.polar.com`, 12 h tokens + refresh, `training_sessions:read` scope). Open
+verify-first item: the exact **units** of v4 SPEED values (km/h vs m/s). This is
+captured here only so the research isn't lost; the design itself will be worked
+out in its own brainstorm.
