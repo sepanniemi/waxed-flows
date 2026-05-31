@@ -45,6 +45,42 @@ final class GDPRTrainingSessionGPSTests: XCTestCase {
         XCTAssertEqual(points[2].elapsedMillis, 10000)
     }
 
+    func testSpeedSamplesAlignToWaypointsByElapsedTime() throws {
+        // Route waypoints at t=0,1000,2000ms aligned against a 1s SPEED series.
+        // Decoder maps "NaN" and non-positive values to nil, positive km/h through.
+        let json = """
+        {
+            "startTime": "2019-04-10T07:20:36.000",
+            "durationMillis": 3000,
+            "exercises": [
+                {
+                    "routes": {
+                        "route": {
+                            "wayPoints": [
+                                {"longitude": 25.6, "latitude": 65.0, "altitude": 22.0, "elapsedMillis": 0},
+                                {"longitude": 25.6, "latitude": 65.0, "altitude": 22.0, "elapsedMillis": 1000},
+                                {"longitude": 25.6, "latitude": 65.0, "altitude": 22.0, "elapsedMillis": 2000}
+                            ]
+                        }
+                    },
+                    "samples": {
+                        "samples": [
+                            {"type": "ALTITUDE", "intervalMillis": 1000, "values": [22.0, 22.0, 22.0]},
+                            {"type": "SPEED", "intervalMillis": 1000, "values": ["NaN", 10.0, 21.5]}
+                        ]
+                    }
+                }
+            ]
+        }
+        """.data(using: .utf8)!
+        let session = try JSONDecoder().decode(GDPRTrainingSession.self, from: json)
+        let points = try XCTUnwrap(session.toActivity(fileID: "speed")).routePoints
+        XCTAssertEqual(points.count, 3)
+        XCTAssertNil(points[0].speedKmh)                       // index 0 → "NaN" → nil
+        XCTAssertEqual(try XCTUnwrap(points[1].speedKmh), 10.0, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(points[2].speedKmh), 21.5, accuracy: 0.001)
+    }
+
     func testSessionWithNoRoutes_hasRouteFalse() throws {
         let noRouteJSON = """
         {
