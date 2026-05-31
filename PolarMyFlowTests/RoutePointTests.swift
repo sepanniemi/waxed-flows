@@ -22,4 +22,21 @@ final class RoutePointTests: XCTestCase {
         XCTAssertEqual(decoded.count, 2)
         XCTAssertEqual(decoded[1].elapsedMillis, 5000)
     }
+
+    func testSpeedKmhDefaultsNilAndRoundTrips() throws {
+        let noSpeed = RoutePoint(latitude: 1, longitude: 2, altitude: 3, elapsedMillis: 4)
+        XCTAssertNil(noSpeed.speedKmh)
+
+        let withSpeed = RoutePoint(latitude: 1, longitude: 2, altitude: 3,
+                                   elapsedMillis: 4, speedKmh: 16.1)
+        let decoded = try JSONDecoder().decode(
+            RoutePoint.self, from: JSONEncoder().encode(withSpeed))
+        XCTAssertEqual(decoded.speedKmh ?? -1, 16.1, accuracy: 0.001)
+
+        // Backward compatibility: a blob without the key decodes speedKmh as nil.
+        let legacy = #"{"latitude":1,"longitude":2,"altitude":3,"elapsedMillis":4}"#
+        let legacyDecoded = try JSONDecoder().decode(
+            RoutePoint.self, from: Data(legacy.utf8))
+        XCTAssertNil(legacyDecoded.speedKmh)
+    }
 }
