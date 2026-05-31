@@ -7,6 +7,7 @@ final class SpeedTrackOverlay: NSObject, MKOverlay {
     struct Segment {
         let coords: [CLLocationCoordinate2D]
         let color: UIColor
+        let normalizedSpeed: Double
     }
 
     let coordinate: CLLocationCoordinate2D
@@ -39,30 +40,33 @@ final class SpeedTrackRenderer: MKOverlayRenderer {
 
     override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
         let lineWidth = 2.5 / zoomScale
-        let glowBlur  = 7.0 / zoomScale
 
         context.setLineJoin(.round)
 
-        // Glow pass — all segments drawn into a single transparency layer so the
-        // CGContext shadow produces one smooth continuous halo instead of per-segment
-        // blobs that would accumulate alpha at every segment boundary.
-        context.saveGState()
-        context.setShadow(offset: .zero, blur: glowBlur,
-                          color: UIColor(white: 1.0, alpha: 0.8).cgColor)
-        context.beginTransparencyLayer(auxiliaryInfo: nil)
-        context.setLineCap(.round)
-        context.setLineWidth(lineWidth)
+        // Glow pass — each segment in its own transparency layer, with a shadow
+        // tinted to the segment's own speed color and scaled by speed. Fast
+        // segments bloom large and bright; slow segments stay a tight, dim line.
+        // Adjacent fast→slow boundaries let the hot bloom spill over the cool
+        // line, so heat appears to radiate from the fast sections.
         for seg in track.segments {
             guard let path = makePath(seg.coords) else { continue }
+            let blur  = GlowProfile.blurFactor(seg.normalizedSpeed) / zoomScale
+            let alpha = GlowProfile.alpha(seg.normalizedSpeed)
+            context.saveGState()
+            context.setShadow(offset: .zero, blur: blur,
+                              color: seg.color.withAlphaComponent(alpha).cgColor)
+            context.beginTransparencyLayer(auxiliaryInfo: nil)
+            context.setLineCap(.round)
+            context.setLineWidth(lineWidth)
             context.setStrokeColor(seg.color.cgColor)
             context.addPath(path)
             context.strokePath()
+            context.endTransparencyLayer()
+            context.restoreGState()
         }
-        context.endTransparencyLayer()
-        context.restoreGState()
 
         // Crisp line pass — butt caps so adjacent segments meet flush at their
-        // shared coordinate with no round-cap extension overlap.
+        // shared coordinate with no round-cap overlap.
         context.setLineCap(.butt)
         context.setLineWidth(lineWidth)
         for seg in track.segments {
@@ -109,14 +113,12 @@ struct TrackMapView: UIViewRepresentable {
     func updateUIView(_ mapView: MKMapView, context: Context) {
         context.coordinator.rebuildIfNeeded(on: mapView, routePoints: routePoints)
         context.coordinator.moveScrubDot(on: mapView, routePoints: routePoints, fraction: scrubFraction)
-        let speeds = context.coordinator.speedsKmh
+        let speeds = context.coordinator.filledSpeeds
         guard !speeds.isEmpty else { return }
         let idx = max(0, min(speeds.count - 1, Int(scrubFraction * Double(speeds.count - 1))))
-        if let s = speeds[idx] {
-            let rounded = (s * 10).rounded() / 10
-            if abs(rounded - speedKmh) > 0.05 {
-                DispatchQueue.main.async { speedKmh = rounded }
-            }
+        let rounded = (speeds[idx] * 10).rounded() / 10
+        if abs(rounded - speedKmh) > 0.05 {
+            DispatchQueue.main.async { speedKmh = rounded }
         }
     }
 
@@ -127,42 +129,30 @@ struct TrackMapView: UIViewRepresentable {
     final class Coordinator: NSObject, MKMapViewDelegate {
         private let scrubAnnotation = MKPointAnnotation()
         private var cachedRoutePoints: [RoutePoint] = []
-        private(set) var speedsKmh: [Double?] = []
+        private(set) var filledSpeeds: [Double] = []
 
         func buildOverlays(on mapView: MKMapView, routePoints: [RoutePoint]) {
             cachedRoutePoints = routePoints
             guard routePoints.count >= 2 else { return }
 
-            speedsKmh = routePoints.map { $0.speedKmh }
+            filledSpeeds = SpeedInterpolator.fill(routePoints.map { $0.speedKmh })
+            let normalize = SpeedNormalizer.make(from: filledSpeeds)
 
-            let knownSpeeds = speedsKmh.compactMap { $0 }
-            let normalize: (Double) -> Double
-            if knownSpeeds.count >= 2 {
-                let sorted = knownSpeeds.sorted()
-                func pct(_ p: Double) -> Double {
-                    sorted[max(0, min(sorted.count - 1, Int((p * Double(sorted.count - 1)).rounded())))]
-                }
-                let p10 = pct(0.10), p50 = pct(0.50), p90 = pct(0.90)
-                let half = max((p90 - p10) / 2.0, 0.001)
-                normalize = { speed in max(0, min(1, 0.5 + 0.5 * (speed - p50) / half)) }
-            } else {
-                normalize = { _ in 0.5 }
-            }
-
-            func bin(_ speed: Double?) -> Int {
-                guard let s = speed else { return 50 }
-                return min(99, Int(normalize(s) * 100))
+            // No recorded speed at all → flat amber (normalized 0.5).
+            func bin(_ i: Int) -> Int {
+                guard !filledSpeeds.isEmpty else { return 50 }
+                return min(99, Int(normalize(filledSpeeds[i]) * 100))
             }
 
             var result: [(coords: [CLLocationCoordinate2D], normalizedSpeed: Double)] = []
             var current = [CLLocationCoordinate2D(latitude: routePoints[0].latitude,
                                                    longitude: routePoints[0].longitude)]
-            var currentBin = bin(speedsKmh[0])
+            var currentBin = bin(0)
 
             for i in 1..<routePoints.count {
                 let coord = CLLocationCoordinate2D(latitude: routePoints[i].latitude,
                                                     longitude: routePoints[i].longitude)
-                let b = bin(speedsKmh[i])
+                let b = bin(i)
                 if b != currentBin, current.count >= 2 {
                     result.append((current, Double(currentBin) / 99.0))
                     currentBin = b
@@ -177,7 +167,8 @@ struct TrackMapView: UIViewRepresentable {
 
             let segments = result.map {
                 SpeedTrackOverlay.Segment(coords: $0.coords,
-                                          color: SpeedColorRamp.color(for: $0.normalizedSpeed))
+                                          color: SpeedColorRamp.color(for: $0.normalizedSpeed),
+                                          normalizedSpeed: $0.normalizedSpeed)
             }
             mapView.addOverlay(SpeedTrackOverlay(segments: segments), level: .aboveRoads)
 
