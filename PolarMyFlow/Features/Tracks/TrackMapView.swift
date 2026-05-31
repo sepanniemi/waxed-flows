@@ -95,13 +95,14 @@ struct TrackMapView: UIViewRepresentable {
     let routePoints: [RoutePoint]
     @Binding var scrubFraction: Double
     @Binding var speedKmh: Double
+    @Binding var recenterToken: Int
 
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
         mapView.delegate = context.coordinator
-        mapView.isScrollEnabled = false
-        mapView.isZoomEnabled = false
-        mapView.isRotateEnabled = false
+        mapView.isScrollEnabled = true
+        mapView.isZoomEnabled = true
+        mapView.isRotateEnabled = false   // keep north-up
         mapView.isPitchEnabled = false
         mapView.mapType = .mutedStandard
         mapView.showsUserLocation = false
@@ -113,6 +114,7 @@ struct TrackMapView: UIViewRepresentable {
     func updateUIView(_ mapView: MKMapView, context: Context) {
         context.coordinator.rebuildIfNeeded(on: mapView, routePoints: routePoints)
         context.coordinator.moveScrubDot(on: mapView, routePoints: routePoints, fraction: scrubFraction)
+        context.coordinator.recenterIfNeeded(on: mapView, token: recenterToken)
         let speeds = context.coordinator.filledSpeeds
         guard !speeds.isEmpty else { return }
         let idx = max(0, min(speeds.count - 1, Int(scrubFraction * Double(speeds.count - 1))))
@@ -130,6 +132,8 @@ struct TrackMapView: UIViewRepresentable {
         private let scrubAnnotation = MKPointAnnotation()
         private var cachedRoutePoints: [RoutePoint] = []
         private(set) var filledSpeeds: [Double] = []
+        private var routeRect: MKMapRect = .null
+        private var lastRecenterToken = 0
 
         func buildOverlays(on mapView: MKMapView, routePoints: [RoutePoint]) {
             cachedRoutePoints = routePoints
@@ -178,6 +182,7 @@ struct TrackMapView: UIViewRepresentable {
                 rect = rect.union(MKMapRect(x: pt.x, y: pt.y, width: 0, height: 0))
             }
             let fitRect = rect
+            routeRect = fitRect
             DispatchQueue.main.async {
                 mapView.setVisibleMapRect(fitRect,
                     edgePadding: UIEdgeInsets(top: 28, left: 28, bottom: 28, right: 28),
@@ -202,6 +207,15 @@ struct TrackMapView: UIViewRepresentable {
             scrubAnnotation.coordinate = CLLocationCoordinate2D(
                 latitude: cachedRoutePoints[idx].latitude,
                 longitude: cachedRoutePoints[idx].longitude)
+        }
+
+        func recenterIfNeeded(on mapView: MKMapView, token: Int) {
+            guard token != lastRecenterToken else { return }
+            guard !routeRect.isNull else { return }   // don't consume the token until we can act
+            lastRecenterToken = token
+            mapView.setVisibleMapRect(routeRect,
+                edgePadding: UIEdgeInsets(top: 28, left: 28, bottom: 28, right: 28),
+                animated: true)
         }
 
         // MARK: MKMapViewDelegate

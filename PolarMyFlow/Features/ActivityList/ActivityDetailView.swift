@@ -5,6 +5,7 @@ struct ActivityDetailView: View {
     @State private var viewModel: ActivityDetailViewModel
     @State private var scrubFraction: Double = 0.0
     @State private var scrubSpeedKmh: Double = 0.0
+    @State private var recenterToken: Int = 0
     @State private var cachedRoutePoints: [RoutePoint]
 
     init(activity: Activity) {
@@ -83,9 +84,23 @@ struct ActivityDetailView: View {
         VStack(spacing: 12) {
             TrackMapView(routePoints: cachedRoutePoints,
                          scrubFraction: $scrubFraction,
-                         speedKmh: $scrubSpeedKmh)
+                         speedKmh: $scrubSpeedKmh,
+                         recenterToken: $recenterToken)
                 .frame(height: 380)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
+                .overlay(alignment: .bottomTrailing) {
+                    Button {
+                        recenterToken += 1
+                    } label: {
+                        Image(systemName: "scope")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Palette.ink)
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .padding(12)
+                    .accessibilityLabel("Recenter map on route")
+                }
                 .padding(.horizontal, -Spacing.screenMargin)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(String(format: "%.1f", scrubSpeedKmh))
