@@ -16,7 +16,11 @@ final class SyncCoordinatorTests: XCTestCase {
     }
 
     func test_sync_savesReturnedActivities() async throws {
-        mockAccessLink.stubbedActivities = [makeActivity(id: "a1"), makeActivity(id: "a2")]
+        // Distinct minutes so the minute-bucket dedup keeps them separate.
+        mockAccessLink.stubbedActivities = [
+            makeActivity(id: "a1", startTime: Date(timeIntervalSince1970: 1_700_000_000)),
+            makeActivity(id: "a2", startTime: Date(timeIntervalSince1970: 1_700_000_120)),
+        ]
 
         let imported = try await coordinator.sync(userID: "user-1")
 
@@ -34,8 +38,13 @@ final class SyncCoordinatorTests: XCTestCase {
     }
 
     func test_sync_deduplication_doesNotDoubleCount() async throws {
-        try repo.save(makeActivity(id: "existing"))
-        mockAccessLink.stubbedActivities = [makeActivity(id: "existing"), makeActivity(id: "new")]
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+        try repo.save(makeActivity(id: "existing", startTime: t0))
+        // "existing" repeats (same id → deduped); "new" is a distinct minute → added.
+        mockAccessLink.stubbedActivities = [
+            makeActivity(id: "existing", startTime: t0),
+            makeActivity(id: "new", startTime: Date(timeIntervalSince1970: 1_700_000_120)),
+        ]
 
         _ = try await coordinator.sync(userID: "user-1")
 

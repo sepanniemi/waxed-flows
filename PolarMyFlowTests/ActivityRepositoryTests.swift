@@ -30,8 +30,8 @@ final class ActivityRepositoryTests: XCTestCase {
     }
 
     func test_fetchBySport_filtersCorrectly() throws {
-        try repo.save(makeActivity(id: "r1", sport: "RUNNING"))
-        try repo.save(makeActivity(id: "s1", sport: "CROSS_COUNTRY_SKIING"))
+        try repo.save(makeActivity(id: "r1", startTime: Date(timeIntervalSince1970: 1_700_000_000), sport: "RUNNING"))
+        try repo.save(makeActivity(id: "s1", startTime: Date(timeIntervalSince1970: 1_700_000_120), sport: "CROSS_COUNTRY_SKIING"))
         let runners = try repo.fetch(sport: .running)
         XCTAssertEqual(runners.count, 1)
         XCTAssertEqual(runners.first?.id, "r1")
@@ -56,9 +56,9 @@ final class ActivityRepositoryTests: XCTestCase {
     }
 
     func test_availableSports_returnsOnlySportsWithActivities() throws {
-        try repo.save(makeActivity(id: "r1", sport: "RUNNING"))
-        try repo.save(makeActivity(id: "r2", sport: "RUNNING"))
-        try repo.save(makeActivity(id: "s1", sport: "CROSS_COUNTRY_SKIING"))
+        try repo.save(makeActivity(id: "r1", startTime: Date(timeIntervalSince1970: 1_700_000_000), sport: "RUNNING"))
+        try repo.save(makeActivity(id: "r2", startTime: Date(timeIntervalSince1970: 1_700_000_120), sport: "RUNNING"))
+        try repo.save(makeActivity(id: "s1", startTime: Date(timeIntervalSince1970: 1_700_000_240), sport: "CROSS_COUNTRY_SKIING"))
         let sports = try repo.availableSports()
         XCTAssertEqual(Set(sports), [.running, .xcSkiing])
     }

@@ -131,8 +131,6 @@ final class HistoryImporter {
     }
 
     static func minuteBucket(_ date: Date) -> Date {
-        let cal = Calendar(identifier: .gregorian)
-        let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: date)
-        return cal.date(from: comps) ?? date
+        ActivityRepository.minuteBucket(date)
     }
 }

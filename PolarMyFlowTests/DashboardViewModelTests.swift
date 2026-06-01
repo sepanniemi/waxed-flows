@@ -21,12 +21,15 @@ final class DashboardViewModelTests: XCTestCase {
 
     func test_load_groupsBySeasonAndSport() async throws {
         let cal = gregorianUTC()
-        let janWinter = cal.date(from: DateComponents(year: 2025, month: 1, day: 10))!
+        // Distinct days within the same winter so minute-bucket dedup keeps them separate.
+        let jan10 = cal.date(from: DateComponents(year: 2025, month: 1, day: 10))!
+        let jan11 = cal.date(from: DateComponents(year: 2025, month: 1, day: 11))!
+        let jan12 = cal.date(from: DateComponents(year: 2025, month: 1, day: 12))!
         let junSummer = cal.date(from: DateComponents(year: 2025, month: 6, day: 10))!
 
-        try repo.save(makeActivity(id: "run1", startTime: janWinter, distance: 10_000, sport: "RUNNING"))
-        try repo.save(makeActivity(id: "run2", startTime: janWinter, distance: 5_000, sport: "RUNNING"))
-        try repo.save(makeActivity(id: "ski1", startTime: janWinter, distance: 20_000, sport: "CROSS_COUNTRY_SKIING"))
+        try repo.save(makeActivity(id: "run1", startTime: jan10, distance: 10_000, sport: "RUNNING"))
+        try repo.save(makeActivity(id: "run2", startTime: jan11, distance: 5_000, sport: "RUNNING"))
+        try repo.save(makeActivity(id: "ski1", startTime: jan12, distance: 20_000, sport: "CROSS_COUNTRY_SKIING"))
         try repo.save(makeActivity(id: "bike1", startTime: junSummer, distance: 40_000, sport: "CYCLING"))
 
         await vm.load()
@@ -47,8 +50,9 @@ final class DashboardViewModelTests: XCTestCase {
     func test_load_avgPace_isDurationOverTotalDistance() async throws {
         let cal = gregorianUTC()
         let when = cal.date(from: DateComponents(year: 2025, month: 6, day: 1))!
+        let when2 = cal.date(from: DateComponents(year: 2025, month: 6, day: 2))!
         try repo.save(makeActivity(id: "a", startTime: when, duration: 3600, distance: 10_000, sport: "RUNNING"))
-        try repo.save(makeActivity(id: "b", startTime: when, duration: 1800, distance: 5_000, sport: "RUNNING"))
+        try repo.save(makeActivity(id: "b", startTime: when2, duration: 1800, distance: 5_000, sport: "RUNNING"))
 
         await vm.load()
 

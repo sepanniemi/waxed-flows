@@ -34,6 +34,8 @@ final class PolarAccessLinkClient {
     }
 
     // Fetch exercises from AccessLink (last 30 days of data uploaded to Flow).
+    // For each exercise with has_route=true, fetches the GPX track and
+    // populates routePointsData so the map view can render the line.
     func pullNewActivities() async throws -> [Activity] {
         let request = makeRequest(path: "/v3/exercises", method: "GET")
         let (data, status) = try await perform(request, label: "GET /v3/exercises")
@@ -43,7 +45,32 @@ final class PolarAccessLinkClient {
         guard let exercises = try? JSONDecoder().decode([AccessLinkExercise].self, from: data) else {
             throw APIError.decodingFailed
         }
-        return exercises.compactMap { $0.toActivity() }
+
+        var activities: [Activity] = []
+        for exercise in exercises {
+            guard let activity = exercise.toActivity() else { continue }
+            if activity.hasRoute {
+                if let route = try? await fetchGPX(exerciseID: exercise.id),
+                   !route.isEmpty,
+                   let data = try? JSONEncoder().encode(route) {
+                    activity.routePointsData = data
+                } else {
+                    // GPX missing or unparseable — leave hasRoute true so the
+                    // record is still flagged; map view will be empty.
+                }
+            }
+            activities.append(activity)
+        }
+        return activities
+    }
+
+    private func fetchGPX(exerciseID: String) async throws -> [RoutePoint] {
+        var request = makeRequest(path: "/v3/exercises/\(exerciseID)/gpx", method: "GET")
+        request.setValue("application/gpx+xml", forHTTPHeaderField: "Accept")
+        let (data, status) = try await perform(request, label: "GET /v3/exercises/\(exerciseID)/gpx")
+        if status == 204 || status == 404 { return [] }
+        guard status == 200 else { throw APIError.httpError(statusCode: status) }
+        return GPXParser.parse(data)
     }
 
     // MARK: - Private

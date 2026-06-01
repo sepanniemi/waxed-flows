@@ -8,16 +8,44 @@ final class ActivityRepository {
         self.context = context
     }
 
-    // Insert only if ID not already present (deduplication)
+    // Insert if no record exists by ID or by start-time minute bucket. If a
+    // duplicate exists and the incoming record carries GPS the existing one
+    // lacks, merge it in — covers both re-syncing an existing AccessLink
+    // exercise (same ID, GPX now available) and AccessLink supplying a route
+    // for a GDPR-imported activity (different ID, same minute).
     func save(_ activity: Activity) throws {
         let id = activity.id
-        let descriptor = FetchDescriptor<Activity>(
-            predicate: #Predicate { $0.id == id }
+        let byID = FetchDescriptor<Activity>(predicate: #Predicate { $0.id == id })
+        if let existing = try context.fetch(byID).first {
+            try mergeGPSIfBetter(into: existing, from: activity)
+            return
+        }
+
+        let bucketStart = Self.minuteBucket(activity.startTime)
+        let bucketEnd = bucketStart.addingTimeInterval(60)
+        let byTime = FetchDescriptor<Activity>(
+            predicate: #Predicate { $0.startTime >= bucketStart && $0.startTime < bucketEnd }
         )
-        let existing = try context.fetch(descriptor)
-        guard existing.isEmpty else { return }
+        if let existing = try context.fetch(byTime).first {
+            try mergeGPSIfBetter(into: existing, from: activity)
+            return
+        }
+
         context.insert(activity)
         try context.save()
+    }
+
+    private func mergeGPSIfBetter(into existing: Activity, from incoming: Activity) throws {
+        guard existing.routePointsData == nil, let data = incoming.routePointsData else { return }
+        existing.routePointsData = data
+        existing.hasRoute = true
+        try context.save()
+    }
+
+    static func minuteBucket(_ date: Date) -> Date {
+        let cal = Calendar(identifier: .gregorian)
+        let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        return cal.date(from: comps) ?? date
     }
 
     func fetchAll() throws -> [Activity] {
