@@ -27,3 +27,7 @@ PolarMyFlow/Info.plist
 
 # Superpowers
 .superpowers/
+
+# Local Polar GDPR export (personal data — never commit)
+# Anchored to repo root so it doesn't match PolarMyFlow/Data/ on case-insensitive filesystems.
+/data/
