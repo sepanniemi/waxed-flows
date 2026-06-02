@@ -1,13 +1,13 @@
 import UIKit
 
-// A2 colour ramp: ice-blue (slow) → sky → amber → orange → red (fast)
+// A3 colour ramp: deep blue (slow) → medium blue → amber → orange → red (fast)
 enum SpeedColorRamp {
     private static let stops: [(t: Double, r: Double, g: Double, b: Double)] = [
-        (0.00, 0xBF / 255.0, 0xDB / 255.0, 0xFE / 255.0),  // #BFDBFE ice-blue
-        (0.25, 0x60 / 255.0, 0xA5 / 255.0, 0xFA / 255.0),  // #60A5FA sky
+        (0.00, 0x25 / 255.0, 0x63 / 255.0, 0xEB / 255.0),  // #2563EB deep blue (slow)
+        (0.25, 0x3B / 255.0, 0x82 / 255.0, 0xF6 / 255.0),  // #3B82F6 medium blue
         (0.50, 0xFB / 255.0, 0xBF / 255.0, 0x24 / 255.0),  // #FBBF24 amber
         (0.75, 0xF9 / 255.0, 0x73 / 255.0, 0x16 / 255.0),  // #F97316 orange
-        (1.00, 0xDC / 255.0, 0x26 / 255.0, 0x26 / 255.0),  // #DC2626 red
+        (1.00, 0xDC / 255.0, 0x26 / 255.0, 0x26 / 255.0),  // #DC2626 red (fast)
     ]
 
     static func color(for normalizedSpeed: Double) -> UIColor {
