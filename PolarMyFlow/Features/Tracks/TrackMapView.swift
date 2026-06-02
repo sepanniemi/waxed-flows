@@ -39,7 +39,7 @@ final class SpeedTrackRenderer: MKOverlayRenderer {
     }
 
     override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
-        let lineWidth = 2.5 / zoomScale
+        let lineWidth = 3.5 / zoomScale
 
         context.setLineJoin(.round)
 
@@ -72,6 +72,17 @@ final class SpeedTrackRenderer: MKOverlayRenderer {
         for seg in track.segments {
             guard let path = makePath(seg.coords) else { continue }
             context.setStrokeColor(seg.color.cgColor)
+            context.addPath(path)
+            context.strokePath()
+        }
+
+        // White filament — 1 pt center highlight, rides on top of the colored core.
+        // Framed by ~1.25 pt of color on each side so it reads on any background.
+        context.setLineCap(.butt)
+        context.setLineWidth(1.0 / zoomScale)
+        context.setStrokeColor(UIColor.white.withAlphaComponent(0.45).cgColor)
+        for seg in track.segments {
+            guard let path = makePath(seg.coords) else { continue }
             context.addPath(path)
             context.strokePath()
         }
