@@ -1,13 +1,15 @@
 import UIKit
 
-// A3 colour ramp: deep blue (slow) → medium blue → amber → orange → red (fast)
+// A4 colour ramp: indigo (slow) → purple → pink → red → orange (fast)
+// Chosen for contrast on Maastokartta topo tiles — avoids blue (clashes with water)
+// and amber/yellow (invisible on cream land fill) that were present in earlier ramps.
 enum SpeedColorRamp {
     private static let stops: [(t: Double, r: Double, g: Double, b: Double)] = [
-        (0.00, 0x25 / 255.0, 0x63 / 255.0, 0xEB / 255.0),  // #2563EB deep blue (slow)
-        (0.25, 0x3B / 255.0, 0x82 / 255.0, 0xF6 / 255.0),  // #3B82F6 medium blue
-        (0.50, 0xFB / 255.0, 0xBF / 255.0, 0x24 / 255.0),  // #FBBF24 amber
-        (0.75, 0xF9 / 255.0, 0x73 / 255.0, 0x16 / 255.0),  // #F97316 orange
-        (1.00, 0xDC / 255.0, 0x26 / 255.0, 0x26 / 255.0),  // #DC2626 red (fast)
+        (0.00, 0x4F / 255.0, 0x46 / 255.0, 0xE5 / 255.0),  // #4F46E5 indigo   (slow)
+        (0.25, 0xA8 / 255.0, 0x55 / 255.0, 0xF7 / 255.0),  // #A855F7 purple
+        (0.50, 0xEC / 255.0, 0x48 / 255.0, 0x99 / 255.0),  // #EC4899 pink
+        (0.75, 0xEF / 255.0, 0x44 / 255.0, 0x44 / 255.0),  // #EF4444 red
+        (1.00, 0xF9 / 255.0, 0x73 / 255.0, 0x16 / 255.0),  // #F97316 orange   (fast)
     ]
 
     static func color(for normalizedSpeed: Double) -> UIColor {

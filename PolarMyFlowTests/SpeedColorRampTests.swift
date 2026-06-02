@@ -9,35 +9,35 @@ final class SpeedColorRampTests: XCTestCase {
         return (r, g, b)
     }
 
-    func testColorAtZero_isDeepBlue() {
+    func testColorAtZero_isIndigo() {
         let c = components(SpeedColorRamp.color(for: 0.0))
-        XCTAssertEqual(c.r, 0x25 / 255.0, accuracy: 0.01)  // #2563EB
-        XCTAssertEqual(c.g, 0x63 / 255.0, accuracy: 0.01)
-        XCTAssertEqual(c.b, 0xEB / 255.0, accuracy: 0.01)
+        XCTAssertEqual(c.r, 0x4F / 255.0, accuracy: 0.01)  // #4F46E5
+        XCTAssertEqual(c.g, 0x46 / 255.0, accuracy: 0.01)
+        XCTAssertEqual(c.b, 0xE5 / 255.0, accuracy: 0.01)
     }
 
-    func testColorAtQuarter_isMediumBlue() {
+    func testColorAtQuarter_isPurple() {
         let c = components(SpeedColorRamp.color(for: 0.25))
-        XCTAssertEqual(c.r, 0x3B / 255.0, accuracy: 0.01)  // #3B82F6
-        XCTAssertEqual(c.g, 0x82 / 255.0, accuracy: 0.01)
-        XCTAssertEqual(c.b, 0xF6 / 255.0, accuracy: 0.01)
+        XCTAssertEqual(c.r, 0xA8 / 255.0, accuracy: 0.01)  // #A855F7
+        XCTAssertEqual(c.g, 0x55 / 255.0, accuracy: 0.01)
+        XCTAssertEqual(c.b, 0xF7 / 255.0, accuracy: 0.01)
     }
 
-    func testColorAtHalf_isAmber() {
+    func testColorAtHalf_isPink() {
         let c = components(SpeedColorRamp.color(for: 0.5))
-        XCTAssertEqual(c.r, 0xFB / 255.0, accuracy: 0.01)
-        XCTAssertEqual(c.g, 0xBF / 255.0, accuracy: 0.01)
-        XCTAssertEqual(c.b, 0x24 / 255.0, accuracy: 0.01)
+        XCTAssertEqual(c.r, 0xEC / 255.0, accuracy: 0.01)  // #EC4899
+        XCTAssertEqual(c.g, 0x48 / 255.0, accuracy: 0.01)
+        XCTAssertEqual(c.b, 0x99 / 255.0, accuracy: 0.01)
     }
 
-    func testColorAtOne_isRed() {
+    func testColorAtOne_isOrange() {
         let c = components(SpeedColorRamp.color(for: 1.0))
-        XCTAssertEqual(c.r, 0xDC / 255.0, accuracy: 0.01)
-        XCTAssertEqual(c.g, 0x26 / 255.0, accuracy: 0.01)
-        XCTAssertEqual(c.b, 0x26 / 255.0, accuracy: 0.01)
+        XCTAssertEqual(c.r, 0xF9 / 255.0, accuracy: 0.01)  // #F97316
+        XCTAssertEqual(c.g, 0x73 / 255.0, accuracy: 0.01)
+        XCTAssertEqual(c.b, 0x16 / 255.0, accuracy: 0.01)
     }
 
-    func testColorBelowZero_clampsToDeepBlue() {
+    func testColorBelowZero_clampsToIndigo() {
         let atZero = components(SpeedColorRamp.color(for: 0.0))
         let below  = components(SpeedColorRamp.color(for: -1.0))
         XCTAssertEqual(below.r, atZero.r, accuracy: 0.001)
@@ -45,19 +45,20 @@ final class SpeedColorRampTests: XCTestCase {
         XCTAssertEqual(below.b, atZero.b, accuracy: 0.001)
     }
 
-    func testColorAboveOne_clampsToRed() {
+    func testColorAboveOne_clampsToOrange() {
         let atOne = components(SpeedColorRamp.color(for: 1.0))
         let above = components(SpeedColorRamp.color(for: 2.0))
         XCTAssertEqual(above.r, atOne.r, accuracy: 0.001)
         XCTAssertEqual(above.g, atOne.g, accuracy: 0.001)
+        XCTAssertEqual(above.b, atOne.b, accuracy: 0.001)
     }
 
     func testMidpointInterpolation_isBetweenStops() {
-        // t=0.125 is halfway between deep blue (0.0) and medium blue (0.25)
+        // t=0.125 is halfway between indigo (0.0) and purple (0.25)
         let c = components(SpeedColorRamp.color(for: 0.125))
-        let deepBlueR = 0x25 / 255.0 as CGFloat
-        let mediumBlueR = 0x3B / 255.0 as CGFloat
-        let expected = (deepBlueR + mediumBlueR) / 2
+        let indigoR = 0x4F / 255.0 as CGFloat
+        let purpleR = 0xA8 / 255.0 as CGFloat
+        let expected = (indigoR + purpleR) / 2
         XCTAssertEqual(c.r, expected, accuracy: 0.01)
     }
 }

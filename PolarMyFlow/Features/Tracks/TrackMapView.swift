@@ -43,6 +43,17 @@ final class SpeedTrackRenderer: MKOverlayRenderer {
 
         context.setLineJoin(.round)
 
+        // Casing pass — dark semi-transparent outline drawn first so the glow
+        // and core render on top of it. Creates contrast against any tile color.
+        context.setLineCap(.butt)
+        context.setLineWidth(7.0 / zoomScale)
+        context.setStrokeColor(UIColor.black.withAlphaComponent(0.45).cgColor)
+        for seg in track.segments {
+            guard let path = makePath(seg.coords) else { continue }
+            context.addPath(path)
+            context.strokePath()
+        }
+
         // Glow pass — each segment in its own transparency layer, with a shadow
         // tinted to the segment's own speed color and scaled by speed. Fast
         // segments bloom large and bright; slow segments stay a tight, dim line.
