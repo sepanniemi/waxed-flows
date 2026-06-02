@@ -145,8 +145,15 @@ struct TrackMapView: UIViewRepresentable {
         private(set) var filledSpeeds: [Double] = []
         private var routeRect: MKMapRect = .null
         private var lastRecenterToken = 0
+        private var tileOverlay: MKTileOverlay?
 
         func buildOverlays(on mapView: MKMapView, routePoints: [RoutePoint]) {
+            if !BuildConfig.mmlApiKey.isEmpty {
+                let tile = MMLTileOverlay.make(apiKey: BuildConfig.mmlApiKey)
+                tileOverlay = tile
+                mapView.addOverlay(tile, level: .aboveLabels)
+            }
+
             cachedRoutePoints = routePoints
             guard routePoints.count >= 2 else { return }
 
@@ -185,7 +192,7 @@ struct TrackMapView: UIViewRepresentable {
                                           color: SpeedColorRamp.color(for: $0.normalizedSpeed),
                                           normalizedSpeed: $0.normalizedSpeed)
             }
-            mapView.addOverlay(SpeedTrackOverlay(segments: segments), level: .aboveRoads)
+            mapView.addOverlay(SpeedTrackOverlay(segments: segments), level: .aboveLabels)
 
             var rect = MKMapRect.null
             for p in routePoints {
@@ -232,6 +239,9 @@ struct TrackMapView: UIViewRepresentable {
         // MARK: MKMapViewDelegate
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let tile = overlay as? MKTileOverlay {
+                return MKTileOverlayRenderer(tileOverlay: tile)
+            }
             guard let track = overlay as? SpeedTrackOverlay else {
                 return MKOverlayRenderer(overlay: overlay)
             }
