@@ -2,7 +2,7 @@ import MapKit
 
 enum MMLTileOverlay {
     static func urlTemplate(apiKey: String) -> String {
-        "https://avoin-karttakuva.maanmittauslaitos.fi/avoinapi/tiles/wmts/1.0.0" +
+        "https://avoin-karttakuva.maanmittauslaitos.fi/avoin/wmts/1.0.0" +
         "/maastokartta/default/WGS84_Pseudo-Mercator/{z}/{y}/{x}.png?api-key=\(apiKey)"
     }
 

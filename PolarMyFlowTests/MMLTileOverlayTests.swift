@@ -23,6 +23,13 @@ final class MMLTileOverlayTests: XCTestCase {
         XCTAssertTrue(template.contains("maastokartta"))
     }
 
+    func testURLTemplate_usesCorrectBasePath() {
+        // /avoin/wmts/1.0.0/ is the live path; /avoinapi/... returns 404
+        let template = MMLTileOverlay.urlTemplate(apiKey: "k")
+        XCTAssertTrue(template.contains("/avoin/wmts/1.0.0/"),
+                      "base path must be /avoin/wmts/1.0.0/ — /avoinapi/ path returns 404")
+    }
+
     func testOverlay_maximumZIs15() {
         let overlay = MMLTileOverlay.make(apiKey: "k")
         XCTAssertEqual(overlay.maximumZ, 15)
