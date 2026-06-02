@@ -3,13 +3,13 @@ import XCTest
 
 final class GlowProfileTests: XCTestCase {
     func testBlurFactorEndpoints() {
-        XCTAssertEqual(GlowProfile.blurFactor(0), 4.0,  accuracy: 1e-9)
-        XCTAssertEqual(GlowProfile.blurFactor(1), 20.0, accuracy: 1e-9)
+        XCTAssertEqual(GlowProfile.blurFactor(0), 8.0,  accuracy: 1e-9)
+        XCTAssertEqual(GlowProfile.blurFactor(1), 32.0, accuracy: 1e-9)
     }
 
     func testAlphaEndpoints() {
-        XCTAssertEqual(GlowProfile.alpha(0), 0.30, accuracy: 1e-9)
-        XCTAssertEqual(GlowProfile.alpha(1), 0.95, accuracy: 1e-9)
+        XCTAssertEqual(GlowProfile.alpha(0), 0.45, accuracy: 1e-9)
+        XCTAssertEqual(GlowProfile.alpha(1), 1.00, accuracy: 1e-9)
     }
 
     func testMonotonicInSpeed() {
