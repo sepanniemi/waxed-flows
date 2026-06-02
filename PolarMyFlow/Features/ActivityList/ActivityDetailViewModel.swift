@@ -26,6 +26,10 @@ final class ActivityDetailViewModel {
         ActivityFormatting.paceMinPerKm(activity.avgPace)
     }
 
+    var speedString: String {
+        ActivityFormatting.speedKmh(activity.avgSpeed)
+    }
+
     var avgHRString: String? {
         activity.avgHeartRate.map { "\($0) bpm" }
     }

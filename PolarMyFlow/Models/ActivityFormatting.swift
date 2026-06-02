@@ -15,6 +15,10 @@ enum ActivityFormatting {
         return String(format: "%d:%02d /km", secondsPerKm / 60, secondsPerKm % 60)
     }
 
+    static func speedKmh(_ metresPerSecond: Double) -> String {
+        String(format: "%.1f km/h", metresPerSecond * 3.6)
+    }
+
     static func duration(_ seconds: TimeInterval) -> String {
         let total = Int(seconds)
         let h = total / 3600

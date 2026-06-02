@@ -54,6 +54,17 @@ final class ActivityDetailViewModelTests: XCTestCase {
         XCTAssertEqual(vm.title, "XC Skiing")
     }
 
+    func test_speedString_oneDecimalKmh() {
+        // avgSpeed stored as m/s; 10 m/s = 36.0 km/h
+        let vm = makeVM(duration: 1000, distance: 10_000) // avgSpeed = 10 m/s
+        XCTAssertEqual(vm.speedString, "36.0 km/h")
+    }
+
+    func test_speedString_zeroSpeed() {
+        let vm = makeVM(duration: 3600, distance: 0) // avgSpeed = 0
+        XCTAssertEqual(vm.speedString, "0.0 km/h")
+    }
+
     private func makeVM(
         sport: String = "RUNNING",
         duration: TimeInterval = 3600,
