@@ -94,38 +94,80 @@ private struct V4SessionListItem: Decodable {
     let id: String
 }
 
+// Maps the actual Polar Dynamic AccessLink v4 training session JSON.
+// Schema reference: polar.com/polar-api-v4 — trainingsessionTrainingSession
 private struct V4Session: Decodable {
     let id: String
-    let startTime: String          // ISO-8601 with offset e.g. "2026-05-30T08:30:00+03:00"
-    let duration: String           // ISO-8601 e.g. "PT1H30M"
-    let distance: Double?          // metres
-    let heartRate: HeartRate?
-    let sport: String?
-    let hasRoute: Bool?
-    let samples: [SampleSeries]?
-    let routePoints: [WayPoint]?
+    let startTime: String    // ISO-8601 e.g. "2026-05-30T08:30:00Z"
+    let duration: String     // ISO-8601 duration e.g. "PT1H30M"
+    let sportId: String?
+    let calories: Int?
+    let samples: SamplesWrapper?
+    let statistics: Statistics?
+    let routes: RoutesWrapper?
 
-    struct HeartRate: Decodable {
-        let average: Int?
-        let maximum: Int?
+    // trainingsessionSamples: wrapper object whose "samples" key holds the array
+    struct SamplesWrapper: Decodable {
+        let samples: [Sample]?
+
+        struct Sample: Decodable {
+            let type: String            // "SAMPLE_TYPE_SPEED", "SAMPLE_TYPE_HEART_RATE", …
+            let intervalValues: IntervalValues?
+
+            // trainingsessionIntervalValues
+            struct IntervalValues: Decodable {
+                let interval: String    // recording interval in ms, as a string e.g. "1000"
+                let values: [Double?]
+
+                // Custom decoder: Polar encodes missing samples as the string "NaN",
+                // not JSON null. A native [Double?] decoder throws on "NaN" strings,
+                // silently making the whole samples array nil.
+                init(from decoder: Decoder) throws {
+                    let c = try decoder.container(keyedBy: CodingKeys.self)
+                    interval = try c.decode(String.self, forKey: .interval)
+                    var raw = try c.nestedUnkeyedContainer(forKey: .values)
+                    var decoded: [Double?] = []
+                    while !raw.isAtEnd {
+                        if let d = try? raw.decode(Double.self) {
+                            decoded.append(d.isFinite && d > 0 ? d : nil)
+                        } else if (try? raw.decodeNil()) == true {
+                            decoded.append(nil)
+                        } else {
+                            _ = try? raw.decode(String.self)  // consume "NaN" string
+                            decoded.append(nil)
+                        }
+                    }
+                    values = decoded
+                }
+                enum CodingKeys: String, CodingKey { case interval, values }
+            }
+        }
     }
 
-    // Same shape as GDPRTrainingSession.SampleSeries.
-    // [Double?] handles JSON null natively via JSONDecoder.
-    struct SampleSeries: Decodable {
-        let type: String
-        let intervalMillis: Int
-        let values: [Double?]
+    // trainingsessionStatistics: aggregated metrics
+    struct Statistics: Decodable {
+        let distance: Double?       // km
+        let avgHeartRate: Int?
+        let maxHeartRate: Int?
     }
 
-    struct WayPoint: Decodable {
-        let location: Location
-        let timeOffsetFromStartMillis: Int
+    // trainingsessionRoutes: { "route": [ { "routePoints": [...] } ] }
+    struct RoutesWrapper: Decodable {
+        let route: [Route]?
 
-        struct Location: Decodable {
-            let longitude: Double
-            let latitude: Double
-            let altitudeMeters: Double?
+        struct Route: Decodable {
+            let routePoints: [WayPoint]?
+
+            struct WayPoint: Decodable {
+                let location: Location?
+                let timeOffsetFromStartMillis: Int?
+
+                struct Location: Decodable {
+                    let latitude: Double
+                    let longitude: Double
+                    let altitudeMeters: Double?
+                }
+            }
         }
     }
 
@@ -133,25 +175,27 @@ private struct V4Session: Decodable {
         guard let start = Self.parseDate(startTime),
               let dur = PolarV4Client.parseISO8601Duration(duration) else { return nil }
 
-        let dist = distance ?? 0
-        let speedSeries = samples?.first(where: { $0.type == "SPEED" })
-        let wayPoints = routePoints ?? []
+        let distMeters = (statistics?.distance ?? 0) * 1000  // km → metres
 
-        // Same alignment formula as GDPRTrainingSession.toActivity():
-        // idx = timeOffsetFromStartMillis / intervalMillis
-        let points: [RoutePoint] = wayPoints.map { wp in
-            let t = wp.timeOffsetFromStartMillis
+        let speedSeries = samples?.samples?.first(where: { $0.type == "SPEED" })
+        let wayPoints = routes?.route?.first?.routePoints ?? []
+
+        // idx = timeOffsetFromStartMillis / intervalMs — same alignment as GDPR import
+        let points: [RoutePoint] = wayPoints.compactMap { wp in
+            guard let loc = wp.location, let t = wp.timeOffsetFromStartMillis else { return nil }
             var speedKmh: Double? = nil
-            if let series = speedSeries, series.intervalMillis > 0 {
-                let idx = t / series.intervalMillis
-                if idx < series.values.count, let v = series.values[idx] {
-                    speedKmh = v  // v4 SPEED is in km/h (same as GDPR)
+            if let series = speedSeries,
+               let iv = series.intervalValues,
+               let intervalMs = Int(iv.interval), intervalMs > 0 {
+                let idx = t / intervalMs
+                if idx < iv.values.count {
+                    speedKmh = iv.values[idx]  // v4 SPEED is km/h (same as GDPR)
                 }
             }
             return RoutePoint(
-                latitude: wp.location.latitude,
-                longitude: wp.location.longitude,
-                altitude: wp.location.altitudeMeters ?? 0,
+                latitude: loc.latitude,
+                longitude: loc.longitude,
+                altitude: loc.altitudeMeters ?? 0,
                 elapsedMillis: t,
                 speedKmh: speedKmh
             )
@@ -161,13 +205,13 @@ private struct V4Session: Decodable {
             id: id,
             startTime: start,
             duration: dur,
-            distance: dist,
-            sportRawValue: sport ?? SportType.other.rawValue,
-            avgSpeed: dist > 0 ? dist / dur : 0,
-            avgPace:  dist > 0 ? dur / dist : 0,
-            avgHeartRate: heartRate?.average,
-            maxHeartRate: heartRate?.maximum,
-            calories: nil,
+            distance: distMeters,
+            sportRawValue: sportId ?? SportType.other.rawValue,
+            avgSpeed: distMeters > 0 ? distMeters / dur : 0,
+            avgPace:  distMeters > 0 ? dur / distMeters : 0,
+            avgHeartRate: statistics?.avgHeartRate,
+            maxHeartRate: statistics?.maxHeartRate,
+            calories: calories,
             hasRoute: !points.isEmpty,
             routePointsData: points.isEmpty ? nil : try? JSONEncoder().encode(points)
         )
