@@ -23,8 +23,8 @@ final class AuthManager: NSObject {
     static let clientID     = BuildConfig.clientID
     static let clientSecret = BuildConfig.clientSecret
     static let redirectURI  = "polarflow://auth"
-    static let authURLBase  = "https://flow.polar.com/oauth2/authorization"
-    static let tokenURL     = "https://polarremote.com/v2/oauth2/token"
+    static let authURLBase  = "https://auth.polar.com/oauth/authorize"
+    static let tokenURL     = "https://auth.polar.com/oauth/token"
 
     private let userIDKey = "polarflow.userID"
 
@@ -35,6 +35,11 @@ final class AuthManager: NSObject {
 
     // Call on app launch to restore session from Keychain + UserDefaults
     func restoreSession() {
+        let v4MigrationKey = "com.personal.polarmyflow.auth.v4migrated"
+        if !UserDefaults.standard.bool(forKey: v4MigrationKey) {
+            try? tokenStore.delete()
+            UserDefaults.standard.set(true, forKey: v4MigrationKey)
+        }
         guard let token = try? tokenStore.load() else { return }
         currentToken = token
         isAuthenticated = true
@@ -48,7 +53,7 @@ final class AuthManager: NSObject {
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "client_id",     value: Self.clientID),
             URLQueryItem(name: "redirect_uri",  value: Self.redirectURI),
-            URLQueryItem(name: "scope",         value: "accesslink.read_all")
+            URLQueryItem(name: "scope",         value: "training_sessions:read")
         ]
         let authURL = components.url!
 
