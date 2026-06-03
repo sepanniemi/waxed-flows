@@ -51,10 +51,17 @@ private extension PolarV4Client {
     func fetchSessions(from: Date, to: Date) async throws -> [V4Session] {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime]
-        iso.timeZone = TimeZone(secondsFromGMT: 0)  // Z suffix avoids + sign in URL
-        let path = "/training-sessions/list?from=\(iso.string(from: from))&to=\(iso.string(from: to))&features=samples,routes"
-        let (data, status) = try await perform(makeRequest(path: path),
-                                               label: "GET /training-sessions")
+        iso.timeZone = TimeZone(secondsFromGMT: 0)
+        var components = URLComponents(string: "\(Self.baseURL)/training-sessions/list")!
+        components.queryItems = [
+            URLQueryItem(name: "from",     value: iso.string(from: from)),
+            URLQueryItem(name: "to",       value: iso.string(from: to)),
+            URLQueryItem(name: "features", value: "samples,routes"),
+        ]
+        var req = URLRequest(url: components.url!)
+        req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json",       forHTTPHeaderField: "Accept")
+        let (data, status) = try await perform(req, label: "GET /training-sessions")
         if status == 204 { return [] }
         guard status == 200 else { throw APIError.httpError(statusCode: status) }
         struct ListResponse: Decodable { let trainingSessions: [V4Session] }
