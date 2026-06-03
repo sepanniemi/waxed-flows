@@ -9,43 +9,20 @@ final class PolarV4Client {
         self.urlSession = session
         self.accessToken = accessToken
     }
-
-    // Internal for testing
-    static func parseISO8601Duration(_ string: String) -> TimeInterval? {
-        guard string.hasPrefix("PT") else { return nil }
-        var remaining = String(string.dropFirst(2))
-        var total: Double = 0
-        for (unit, multiplier) in [("H", 3600.0), ("M", 60.0), ("S", 1.0)] {
-            if let range = remaining.range(of: unit) {
-                if let value = Double(remaining[remaining.startIndex..<range.lowerBound]) {
-                    total += value * multiplier
-                }
-                remaining = String(remaining[range.upperBound...])
-            }
-        }
-        return total > 0 ? total : nil
-    }
 }
 
 // MARK: - AccessLinkClientProtocol
 
 extension PolarV4Client: AccessLinkClientProtocol {
     func registerUser() async throws -> String {
-        // v4 uses OAuth2 consent — no user registration step. Fixed key for SyncState.
         return "polar-v4"
     }
 
     func pullNewActivities(since: Date?) async throws -> [Activity] {
         let to = Date()
         let from = since ?? Calendar.current.date(byAdding: .day, value: -30, to: to)!
-        let list = try await fetchSessionList(from: from, to: to)
-        var activities: [Activity] = []
-        for item in list {
-            guard let session = try? await fetchSessionDetail(id: item.id),
-                  let activity = session.toActivity() else { continue }
-            activities.append(activity)
-        }
-        return activities
+        let sessions = try await fetchSessions(from: from, to: to)
+        return sessions.compactMap { $0.toActivity() }
     }
 }
 
@@ -69,7 +46,9 @@ private extension PolarV4Client {
         return (data, http.statusCode)
     }
 
-    func fetchSessionList(from: Date, to: Date) async throws -> [V4SessionListItem] {
+    // List endpoint returns { "trainingSessions": [...] } with full session data.
+    // No separate detail call needed.
+    func fetchSessions(from: Date, to: Date) async throws -> [V4Session] {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime]
         let path = "/training-sessions?from=\(iso.string(from: from))&to=\(iso.string(from: to))"
@@ -77,54 +56,52 @@ private extension PolarV4Client {
                                                label: "GET /training-sessions")
         if status == 204 { return [] }
         guard status == 200 else { throw APIError.httpError(statusCode: status) }
-        return (try? JSONDecoder().decode([V4SessionListItem].self, from: data)) ?? []
-    }
-
-    func fetchSessionDetail(id: String) async throws -> V4Session? {
-        let (data, status) = try await perform(makeRequest(path: "/training-sessions/\(id)"),
-                                               label: "GET /training-sessions/\(id)")
-        guard status == 200 else { return nil }
-        return try? JSONDecoder().decode(V4Session.self, from: data)
+        struct ListResponse: Decodable { let trainingSessions: [V4Session] }
+        return (try? JSONDecoder().decode(ListResponse.self, from: data))?.trainingSessions ?? []
     }
 }
 
 // MARK: - DTOs
 
-private struct V4SessionListItem: Decodable {
-    let id: String
-}
-
-// Maps the actual Polar Dynamic AccessLink v4 training session JSON.
-// Schema reference: polar.com/polar-api-v4 — trainingsessionTrainingSession
+// Schema verified against actual Polar Dynamic AccessLink v4 API response.
 private struct V4Session: Decodable {
-    let id: String
-    let startTime: String    // ISO-8601 e.g. "2026-05-30T08:30:00Z"
-    let duration: String     // ISO-8601 duration e.g. "PT1H30M"
-    let sportId: String?
+    struct Identifier: Decodable { let id: String }
+    struct Sport: Decodable { let id: String }
+
+    let identifier: Identifier
+    let startTime: String       // ISO-8601 e.g. "2026-06-02T14:01:13.565Z"
+    let durationMillis: Int     // session duration in milliseconds
+    let distanceMeters: Double?
     let calories: Int?
-    let samples: SamplesWrapper?
-    let statistics: Statistics?
-    let routes: RoutesWrapper?
+    let hrAvg: Int?
+    let hrMax: Int?
+    let sport: Sport?
+    let exercises: [Exercise]?
 
-    // trainingsessionSamples: wrapper object whose "samples" key holds the array
-    struct SamplesWrapper: Decodable {
-        let samples: [Sample]?
+    // All per-point sensor data lives inside exercises[0]
+    struct Exercise: Decodable {
+        let distanceMeters: Double?
+        let ascentMeters: Double?
+        let descentMeters: Double?
+        let samples: SamplesWrapper?
+        let routes: RoutesWrapper?
 
-        struct Sample: Decodable {
-            let type: String            // "SAMPLE_TYPE_SPEED", "SAMPLE_TYPE_HEART_RATE", …
-            let intervalValues: IntervalValues?
+        struct SamplesWrapper: Decodable {
+            let samples: [SampleSeries]?
 
-            // trainingsessionIntervalValues
-            struct IntervalValues: Decodable {
-                let interval: String    // recording interval in ms, as a string e.g. "1000"
+            // Same shape as GDPRTrainingSession.SampleSeries.
+            // Custom decoder: Polar encodes missing values as the string "NaN"
+            // (not JSON null). Native [Double?] throws on "NaN" strings, making
+            // the whole samples array nil and losing all speed data.
+            struct SampleSeries: Decodable {
+                let type: String          // e.g. "SPEED", "HEART_RATE"
+                let intervalMillis: Int   // recording interval in ms
                 let values: [Double?]
 
-                // Custom decoder: Polar encodes missing samples as the string "NaN",
-                // not JSON null. A native [Double?] decoder throws on "NaN" strings,
-                // silently making the whole samples array nil.
                 init(from decoder: Decoder) throws {
                     let c = try decoder.container(keyedBy: CodingKeys.self)
-                    interval = try c.decode(String.self, forKey: .interval)
+                    type = try c.decode(String.self, forKey: .type)
+                    intervalMillis = try c.decode(Int.self, forKey: .intervalMillis)
                     var raw = try c.nestedUnkeyedContainer(forKey: .values)
                     var decoded: [Double?] = []
                     while !raw.isAtEnd {
@@ -139,78 +116,72 @@ private struct V4Session: Decodable {
                     }
                     values = decoded
                 }
-                enum CodingKeys: String, CodingKey { case interval, values }
+                enum CodingKeys: String, CodingKey { case type, intervalMillis, values }
             }
         }
-    }
 
-    // trainingsessionStatistics: aggregated metrics
-    struct Statistics: Decodable {
-        let distance: Double?       // km
-        let avgHeartRate: Int?
-        let maxHeartRate: Int?
-    }
+        // routes.route is a single object (not an array)
+        // wayPoints use elapsedMillis (same field name as GDPR waypoints)
+        struct RoutesWrapper: Decodable {
+            let route: Route?
 
-    // trainingsessionRoutes: { "route": [ { "routePoints": [...] } ] }
-    struct RoutesWrapper: Decodable {
-        let route: [Route]?
+            struct Route: Decodable {
+                let wayPoints: [WayPoint]?
 
-        struct Route: Decodable {
-            let routePoints: [WayPoint]?
-
-            struct WayPoint: Decodable {
-                let location: Location?
-                let timeOffsetFromStartMillis: Int?
-
-                struct Location: Decodable {
-                    let latitude: Double
+                struct WayPoint: Decodable {
                     let longitude: Double
-                    let altitudeMeters: Double?
+                    let latitude: Double
+                    let altitude: Double?
+                    let elapsedMillis: Int?
                 }
             }
         }
     }
 
     func toActivity() -> Activity? {
-        guard let start = Self.parseDate(startTime),
-              let dur = PolarV4Client.parseISO8601Duration(duration) else { return nil }
+        guard let start = Self.parseDate(startTime), durationMillis > 0 else { return nil }
+        let dur = Double(durationMillis) / 1000.0
+        let exercise = exercises?.first
 
-        let distMeters = (statistics?.distance ?? 0) * 1000  // km → metres
+        let dist = distanceMeters ?? exercise?.distanceMeters ?? 0
+        let sportId = sport.flatMap { Int($0.id) } ?? -1
+        let sportStr = SportType.from(polarSportId: sportId).rawValue
 
-        let speedSeries = samples?.samples?.first(where: { $0.type == "SPEED" })
-        let wayPoints = routes?.route?.first?.routePoints ?? []
+        let speedSeries = exercise?.samples?.samples?.first(where: { $0.type == "SPEED" })
+        let wayPoints = exercise?.routes?.route?.wayPoints ?? []
 
-        // idx = timeOffsetFromStartMillis / intervalMs — same alignment as GDPR import
+        // Same alignment formula as GDPRTrainingSession.toActivity():
+        // idx = elapsedMillis / intervalMillis
         let points: [RoutePoint] = wayPoints.compactMap { wp in
-            guard let loc = wp.location, let t = wp.timeOffsetFromStartMillis else { return nil }
+            guard let t = wp.elapsedMillis else { return nil }
             var speedKmh: Double? = nil
-            if let series = speedSeries,
-               let iv = series.intervalValues,
-               let intervalMs = Int(iv.interval), intervalMs > 0 {
-                let idx = t / intervalMs
-                if idx < iv.values.count {
-                    speedKmh = iv.values[idx]  // v4 SPEED is km/h (same as GDPR)
+            if let series = speedSeries, series.intervalMillis > 0 {
+                let idx = t / series.intervalMillis
+                if idx < series.values.count {
+                    speedKmh = series.values[idx]  // SPEED series is in km/h
                 }
             }
             return RoutePoint(
-                latitude: loc.latitude,
-                longitude: loc.longitude,
-                altitude: loc.altitudeMeters ?? 0,
+                latitude: wp.latitude,
+                longitude: wp.longitude,
+                altitude: wp.altitude ?? 0,
                 elapsedMillis: t,
                 speedKmh: speedKmh
             )
         }
 
         return Activity(
-            id: id,
+            id: identifier.id,
             startTime: start,
             duration: dur,
-            distance: distMeters,
-            sportRawValue: sportId ?? SportType.other.rawValue,
-            avgSpeed: distMeters > 0 ? distMeters / dur : 0,
-            avgPace:  distMeters > 0 ? dur / distMeters : 0,
-            avgHeartRate: statistics?.avgHeartRate,
-            maxHeartRate: statistics?.maxHeartRate,
+            distance: dist,
+            sportRawValue: sportStr,
+            avgSpeed: dist > 0 ? dist / dur : 0,
+            avgPace:  dist > 0 ? dur / dist : 0,
+            avgHeartRate: hrAvg,
+            maxHeartRate: hrMax,
+            ascent: exercise?.ascentMeters,
+            descent: exercise?.descentMeters,
             calories: calories,
             hasRoute: !points.isEmpty,
             routePointsData: points.isEmpty ? nil : try? JSONEncoder().encode(points)
