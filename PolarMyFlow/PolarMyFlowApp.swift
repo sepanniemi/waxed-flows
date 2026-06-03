@@ -68,7 +68,7 @@ struct PolarMyFlowApp: App {
             isSyncing = true
             syncMessage = "Connecting to Polar..."
             do {
-                let accessLinkClient = PolarAccessLinkClient(accessToken: token.accessToken)
+                let accessLinkClient = PolarV4Client(accessToken: token.accessToken)
                 let fetchedID = try await accessLinkClient.registerUser()
                 authManager.setUserID(fetchedID)
                 userID = fetchedID
@@ -89,7 +89,7 @@ struct PolarMyFlowApp: App {
 
         let context = ModelContext(sharedModelContainer)
         let repo = ActivityRepository(context: context)
-        let accessLinkClient = PolarAccessLinkClient(accessToken: token.accessToken)
+        let accessLinkClient = PolarV4Client(accessToken: token.accessToken)
         let coordinator = SyncCoordinator(repository: repo, accessLinkClient: accessLinkClient)
 
         do {
