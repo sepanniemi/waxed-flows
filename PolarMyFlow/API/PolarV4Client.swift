@@ -49,13 +49,13 @@ private extension PolarV4Client {
     // List endpoint returns { "trainingSessions": [...] } with full session data.
     // No separate detail call needed.
     func fetchSessions(from: Date, to: Date) async throws -> [V4Session] {
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime]
-        iso.timeZone = TimeZone(secondsFromGMT: 0)
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        df.timeZone = TimeZone(secondsFromGMT: 0)
         var components = URLComponents(string: "\(Self.baseURL)/training-sessions/list")!
         components.queryItems = [
-            URLQueryItem(name: "from",     value: iso.string(from: from)),
-            URLQueryItem(name: "to",       value: iso.string(from: to)),
+            URLQueryItem(name: "from",     value: df.string(from: from)),
+            URLQueryItem(name: "to",       value: df.string(from: to)),
             URLQueryItem(name: "features", value: "samples,routes"),
         ]
         var req = URLRequest(url: components.url!)
