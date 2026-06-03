@@ -14,17 +14,15 @@ final class SyncCoordinator {
     // On subsequent calls it returns only activities added since the last commit.
     @discardableResult
     func sync(userID: String) async throws -> Int {
+        let state = try repository.syncState(forUserID: userID)
+        let activities = try await accessLinkClient.pullNewActivities(since: state.lastSyncedAt)
         var imported = 0
-        let activities = try await accessLinkClient.pullNewActivities()
         for activity in activities {
             try repository.save(activity)
             imported += 1
         }
-
-        let state = try repository.syncState(forUserID: userID)
         state.lastSyncedAt = Date()
         try repository.saveSyncState()
-
         return imported
     }
 }

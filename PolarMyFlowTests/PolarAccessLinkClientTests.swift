@@ -55,7 +55,7 @@ final class PolarAccessLinkClientTests: XCTestCase {
             (HTTPURLResponse(url: URL(string: "https://www.polaraccesslink.com")!,
                              statusCode: 204, httpVersion: nil, headerFields: nil)!, Data())
         }
-        let activities = try await client.pullNewActivities()
+        let activities = try await client.pullNewActivities(since: nil)
         XCTAssertTrue(activities.isEmpty)
     }
 
@@ -81,7 +81,7 @@ final class PolarAccessLinkClientTests: XCTestCase {
                              statusCode: 200, httpVersion: nil, headerFields: nil)!, json)
         }
 
-        let activities = try await client.pullNewActivities()
+        let activities = try await client.pullNewActivities(since: nil)
         XCTAssertEqual(activities.count, 1)
         let act = activities[0]
         XCTAssertEqual(act.id, "2AC312F")
@@ -112,7 +112,7 @@ final class PolarAccessLinkClientTests: XCTestCase {
                              statusCode: 200, httpVersion: nil, headerFields: nil)!, json)
         }
 
-        let activities = try await client.pullNewActivities()
+        let activities = try await client.pullNewActivities(since: nil)
         XCTAssertEqual(activities.count, 1)
         XCTAssertEqual(activities[0].distance, 0.0)
         XCTAssertEqual(activities[0].avgSpeed, 0.0)

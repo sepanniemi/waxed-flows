@@ -36,7 +36,7 @@ final class PolarAccessLinkClient {
     // Fetch exercises from AccessLink (last 30 days of data uploaded to Flow).
     // For each exercise with has_route=true, fetches the GPX track and
     // populates routePointsData so the map view can render the line.
-    func pullNewActivities() async throws -> [Activity] {
+    func pullNewActivities(since: Date?) async throws -> [Activity] {
         let request = makeRequest(path: "/v3/exercises", method: "GET")
         let (data, status) = try await perform(request, label: "GET /v3/exercises")
         if status == 204 { return [] }
@@ -176,11 +176,6 @@ private struct AccessLinkExercise: Decodable {
     static func parseDate(_ s: String) -> Date? {
         naiveFormatter.date(from: s) ?? isoFormatter.date(from: s)
     }
-}
-
-protocol AccessLinkClientProtocol {
-    func registerUser() async throws -> String
-    func pullNewActivities() async throws -> [Activity]
 }
 
 extension PolarAccessLinkClient: AccessLinkClientProtocol {}

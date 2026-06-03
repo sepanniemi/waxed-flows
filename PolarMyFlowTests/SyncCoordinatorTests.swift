@@ -63,6 +63,13 @@ final class SyncCoordinatorTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(state.lastSyncedAt!, before)
     }
 
+    func test_sync_passesSinceToClient() async throws {
+        _ = try await coordinator.sync(userID: "user-1")      // first sync — sets lastSyncedAt
+        mockAccessLink.stubbedActivities = []
+        _ = try await coordinator.sync(userID: "user-1")      // second sync — should pass since
+        XCTAssertNotNil(mockAccessLink.capturedSince)
+    }
+
     func test_sync_propagatesAccessLinkErrors() async throws {
         mockAccessLink.pullError = NSError(domain: "test", code: 1)
 
@@ -80,9 +87,11 @@ final class SyncCoordinatorTests: XCTestCase {
 class MockAccessLinkClient: AccessLinkClientProtocol {
     var stubbedActivities: [Activity] = []
     var pullError: Error?
+    var capturedSince: Date?
 
     func registerUser() async throws -> String { "user-1" }
-    func pullNewActivities() async throws -> [Activity] {
+    func pullNewActivities(since: Date?) async throws -> [Activity] {
+        capturedSince = since
         if let e = pullError { throw e }
         return stubbedActivities
     }
