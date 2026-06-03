@@ -51,7 +51,7 @@ private extension PolarV4Client {
     func fetchSessions(from: Date, to: Date) async throws -> [V4Session] {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime]
-        let path = "/training-sessions?from=\(iso.string(from: from))&to=\(iso.string(from: to))"
+        let path = "/training-sessions/list?from=\(iso.string(from: from))&to=\(iso.string(from: to))"
         let (data, status) = try await perform(makeRequest(path: path),
                                                label: "GET /training-sessions")
         if status == 204 { return [] }
