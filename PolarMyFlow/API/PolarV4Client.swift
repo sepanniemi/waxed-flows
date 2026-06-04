@@ -20,7 +20,11 @@ extension PolarV4Client: AccessLinkClientProtocol {
 
     func pullNewActivities(since: Date?) async throws -> [Activity] {
         let to = Date()
-        let from = since ?? Calendar.current.date(byAdding: .day, value: -30, to: to)!
+        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: to)!
+        let sevenDaysAgo  = Calendar.current.date(byAdding: .day, value:  -7, to: to)!
+        // Always look back at least 7 days so a prematurely-advanced lastSyncedAt
+        // doesn't create a gap. On first sync use 30 days.
+        let from = since.map { min($0, sevenDaysAgo) } ?? thirtyDaysAgo
         let sessions = try await fetchSessions(from: from, to: to)
         return sessions.compactMap { $0.toActivity() }
     }
@@ -46,26 +50,41 @@ private extension PolarV4Client {
         return (data, http.statusCode)
     }
 
-    // List endpoint returns { "trainingSessions": [...] } with full session data.
-    // No separate detail call needed.
+    // API requires datetime (not date-only) and limits to one day per request when features are used.
+    // We loop day by day to fetch samples+routes for each day in range.
     func fetchSessions(from: Date, to: Date) async throws -> [V4Session] {
         let df = DateFormatter()
-        df.dateFormat = "yyyy-MM-dd"
+        df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
         df.timeZone = TimeZone(secondsFromGMT: 0)
-        var components = URLComponents(string: "\(Self.baseURL)/training-sessions/list")!
-        components.queryItems = [
-            URLQueryItem(name: "from",     value: df.string(from: from)),
-            URLQueryItem(name: "to",       value: df.string(from: to)),
-            URLQueryItem(name: "features", value: "samples,routes"),
-        ]
-        var req = URLRequest(url: components.url!)
-        req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json",       forHTTPHeaderField: "Accept")
-        let (data, status) = try await perform(req, label: "GET /training-sessions")
-        if status == 204 { return [] }
-        guard status == 200 else { throw APIError.httpError(statusCode: status) }
-        struct ListResponse: Decodable { let trainingSessions: [V4Session] }
-        return (try? JSONDecoder().decode(ListResponse.self, from: data))?.trainingSessions ?? []
+
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
+        var dayStart = cal.startOfDay(for: from)
+
+        var all: [V4Session] = []
+        while dayStart < to {
+            let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart)!
+            var components = URLComponents(string: "\(Self.baseURL)/training-sessions/list")!
+            components.queryItems = [
+                URLQueryItem(name: "from",     value: df.string(from: dayStart)),
+                URLQueryItem(name: "to",       value: df.string(from: dayEnd)),
+                URLQueryItem(name: "features", value: "samples"),
+                URLQueryItem(name: "features", value: "routes"),
+            ]
+            var req = URLRequest(url: components.url!)
+            req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            req.setValue("application/json",       forHTTPHeaderField: "Accept")
+            let (data, status) = try await perform(req, label: "GET /training-sessions \(df.string(from: dayStart))")
+            if status != 204 {
+                guard status == 200 else { throw APIError.httpError(statusCode: status) }
+                struct ListResponse: Decodable { let trainingSessions: [V4Session] }
+                if let sessions = (try? JSONDecoder().decode(ListResponse.self, from: data))?.trainingSessions {
+                    all.append(contentsOf: sessions)
+                }
+            }
+            dayStart = dayEnd
+        }
+        return all
     }
 }
 
@@ -201,6 +220,13 @@ private struct V4Session: Decodable {
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let d = f.date(from: s) { return d }
         f.formatOptions = [.withInternetDateTime]
-        return f.date(from: s)
+        if let d = f.date(from: s) { return d }
+        // Polar API omits timezone on startTime — treat as UTC
+        let df = DateFormatter()
+        df.timeZone = TimeZone(secondsFromGMT: 0)
+        df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS"
+        if let d = df.date(from: s) { return d }
+        df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        return df.date(from: s)
     }
 }

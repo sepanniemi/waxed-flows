@@ -138,7 +138,13 @@ final class AuthManager: NSObject {
         request.httpBody = "grant_type=refresh_token&refresh_token=\(refreshToken)"
             .data(using: .utf8)
 
-        let (data, _) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            let body = String(data: data, encoding: .utf8) ?? "(empty)"
+            throw AuthError.tokenExchangeFailed(NSError(domain: "PolarAuth",
+                code: http.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "Refresh HTTP \(http.statusCode): \(body)"]))
+        }
         return try decodeTokenResponse(data)
     }
 

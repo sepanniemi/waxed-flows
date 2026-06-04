@@ -3,6 +3,7 @@ import SwiftData
 
 extension Notification.Name {
     static let importZipReceived = Notification.Name("polarmyflow.importZipReceived")
+    static let syncDidComplete   = Notification.Name("polarmyflow.syncDidComplete")
 }
 
 @main
@@ -54,7 +55,17 @@ struct PolarMyFlowApp: App {
 
     @MainActor
     private func startSyncIfAuthenticated() async {
-        guard authManager.isAuthenticated, let token = authManager.currentToken else { return }
+        guard authManager.isAuthenticated else { return }
+
+        // Refresh token before any network use
+        do {
+            try await authManager.refreshIfNeeded()
+        } catch {
+            syncMessage = "Token refresh failed: \(error.localizedDescription)"
+            return
+        }
+
+        guard let token = authManager.currentToken else { return }
         #if DEBUG
         print("🔑 ACCESS TOKEN: \(token.accessToken)")
         print("🔑 REFRESH TOKEN: \(token.refreshToken)")
@@ -100,5 +111,6 @@ struct PolarMyFlowApp: App {
         }
 
         isSyncing = false
+        NotificationCenter.default.post(name: .syncDidComplete, object: nil)
     }
 }

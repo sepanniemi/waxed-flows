@@ -28,6 +28,9 @@ struct DashboardView: View {
             viewModel = vm
             await vm.load()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .syncDidComplete)) { _ in
+            Task { await viewModel?.load() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .debugResetSync)) { _ in
             Task {
                 let repo = ActivityRepository(context: modelContext)

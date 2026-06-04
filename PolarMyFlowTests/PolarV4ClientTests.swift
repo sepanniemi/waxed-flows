@@ -75,9 +75,14 @@ final class PolarV4ClientTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
+        // Day-loop makes one request per day. Return the session on first call only;
+        // subsequent days return empty so we get exactly 1 activity total.
+        var callCount = 0
         MockURLProtocol.requestHandler = { _ in
+            defer { callCount += 1 }
+            let data = callCount == 0 ? listJSON : #"{"trainingSessions":[]}"#.data(using: .utf8)!
             return (HTTPURLResponse(url: URL(string: "https://polaraccesslink.com")!,
-                                    statusCode: 200, httpVersion: nil, headerFields: nil)!, listJSON)
+                                    statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
         }
 
         let activities = try await client.pullNewActivities(since: nil)
@@ -167,9 +172,12 @@ final class PolarV4ClientTests: XCTestCase {
           ]
         }
         """.data(using: .utf8)!
+        var callCount2 = 0
         MockURLProtocol.requestHandler = { _ in
+            defer { callCount2 += 1 }
+            let data = callCount2 == 0 ? listJSON : #"{"trainingSessions":[]}"#.data(using: .utf8)!
             return (HTTPURLResponse(url: URL(string: "https://polaraccesslink.com")!,
-                                    statusCode: 200, httpVersion: nil, headerFields: nil)!, listJSON)
+                                    statusCode: 200, httpVersion: nil, headerFields: nil)!, data)
         }
         let acts = try await client.pullNewActivities(since: nil)
         XCTAssertEqual(acts.count, 1)

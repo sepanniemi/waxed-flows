@@ -5,7 +5,7 @@ struct AuthToken: Codable, Equatable {
     let refreshToken: String
     let expiresAt: Date
 
-    var isExpired: Bool { expiresAt <= Date() }
+    var isExpired: Bool { expiresAt <= Date().addingTimeInterval(60) }
 
     // expiresIn: seconds until expiry, as returned by Polar token endpoint
     init(accessToken: String, refreshToken: String, expiresIn: Int) {
